@@ -25,12 +25,18 @@ public:
 	/** Bild und Groesse (Hoehe in cm); CollisionFrac = Anteil der Bildbreite, der trifft. */
 	/** Flip -1 = Bild gespiegelt (Auto faehrt nach links). */
 	void Setup(UTexture2D* Tex, float Height, float CollisionFrac, float Flip = 1.f);
+	/** 3D-Modell statt Bild (Lore): Laenge quer zur Strecke (Fahrtrichtung), Tiefe, Hoehe in cm; niedrig = drueberspringbar. */
+	void SetupModel(class UStaticMesh* Mesh, float Len, float Depth, float InHeight);
 	/** Pendelt zwischen LatMin und LatMax mit SlideSpeed (cm/s); Phase 0..1 = Startpunkt auf der Hin-und-Her-Bahn. */
 	void Launch(const FVector& Ground, float InA, float InLatMin, float InLatMax, float InSlideSpeed, float Phase);
 	/** Einmal quer von FromLat nach ToLat; bei ArriveTime (s ab jetzt) ist es bei AtLat. */
 	void LaunchCross(const FVector& Ground, float InA, float FromLat, float ToLat, float InSpeed, float ArriveTime, float AtLat);
 	void StepSlide(float DeltaTime, float SecondsToCat);
 	float GetLat() const { return Lat; }
+	/** Auto, das einmal quer faehrt */
+	bool IsOneWay() const { return bOneWay; }
+	/** Hupe schon gespielt */
+	bool bHonked = false;
 	/** Seitliche Lage in Seconds Sekunden (fuer den Test-Autopiloten). */
 	float PredictLat(float SecondsToCat, float Seconds) const;
 
@@ -39,6 +45,7 @@ private:
 	float LatAtTime(float Tm, float* OutDir = nullptr) const;
 
 	UPROPERTY() TObjectPtr<UStaticMeshComponent> Sprite;
+	UPROPERTY() TObjectPtr<UStaticMeshComponent> Model;
 	UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> Mat;
 
 	FVector Base = FVector::ZeroVector;

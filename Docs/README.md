@@ -1,5 +1,50 @@
 # Inkrush – mobiler Tintenkatzen-Runner (UE 5.8, iPhone Hochformat)
 
+
+## Flüche der Gegner-Würfel
+Schwarze Würfel kosten kein Leben mehr, sondern geben 10 s einen zufälligen Fluch (`Buffs.h`): `UBuff_CurseControls`
+(links/rechts vertauscht, GameMode::RequestLaneShift), `UBuff_CurseMirror` (Bild gespiegelt, `PP_Mirror` über `ARunCamera::SetMirror`),
+`UBuff_CurseSpeed` (doppeltes Tempo, `ATrackDirector::SpeedCurse`). Test: `-CatCurseAt=<s>`.
+Schnellzüge: 20 % der fahrenden Züge mit 11–15 m/s. Stehende Züge tragen immer eine Münzreihe auf dem Dach (nur per Doppelsprung).
+
+## Züge als 3D-Modelle (Stand)
+Lok, Waggon und Lore: `Tools/Import/Nature/3d/*.obj` (Tripo, Vertexfarben) -> `Tools/blender_prepare_models.py` -> FBX ->
+Setup-Schritt `models` -> `/Game/Models/SM_TrainLoco`, `SM_TrainCar`, `SM_Minecart` (Material `M_VertexMono`).
+Züge: zwei Gleise breit, Modelle gleichmäßig skaliert (Waggon ~480 x 266 x 372 cm, Lok ~358 x 266 x 306 cm); Lok + 1–3 Waggons
+(fährt entgegen oder steht) oder nur Waggons (stehen). Zug-Abschnitt: 2 Züge je Zone, Parkour: 1.
+Nach Button-Tipps (Item, Weiter, Start) setzt `ACatRunPlayerController::ResetInputAfterUi` den Touch-Zustand zurück;
+Buttons sind nicht fokussierbar (Tastatur bleibt im Spiel).
+Rampen/Blöcke/Stufen sind entfernt (Abgründe bleiben). Loren pendeln quer (drüberspringbar).
+Bombe sprengt auch Züge im Bereich; Tintenfläche liegt flach über allen Gleisen (Instanzdaten: offen links/rechts, Mitte, halbe Breite).
+Einstellungen: Regler MUSIK/SOUND im Menü und in der Pause (gespeichert). Zuggeräusch folgt dem Abstand zum nächsten fahrenden Zug.
+Spraydose: Sprühnebel-Overlay unten (`Spray Overlay.png`, `Tools/blender_make_spray_overlay.py`), bleibt 2 s nach dem Flug.
+
+## Zug-Abschnitte
+Im Wechsel: 120–220 m nur Züge (2 Züge je Zone, 65 % fahren entgegen), dann 180–300 m Parkour (Rampen/Blöcke, wenige
+Züge). Fahrende Züge starten so weit vorn, dass sie erst hinter dem letzten Gelände ihrer Fahrbahnen ankommen.
+Zugfront: `Train front.png`. Kisten sind wieder Bilder (`Crate`/`Cardboard box`). Game-Over-Klang: `Geme over.wav`.
+Das Blueprint `BP_TrackDirector` hatte die alte Wolken-Klasse gespeichert -> `[CoreRedirects]` in DefaultEngine.ini.
+
+## Spraydose (ersetzt die Tintenwolke)
+`UBuff_SprayPaint`: weiße 3D-Dose (Zylinder) auf dem Rücken, schwarze Tropfen/Nebel sprühen nach hinten, die Katze steigt
+auf die Luft-Ebene (`AirLevelZ` 620 cm, 5 Luft-Fahrbahnen = gleiche Lagen wie unten). Dort keine Hindernisse
+(Kollisionen werden übersprungen), nur Münzreihen von 10–20 (`OnSprayFlight`). Nach dem Flug 1,2 s unverwundbar, mit
+Shop `SICHERE LANDUNG` 3 s. Flug 5 s (+Shop). Sound `spraypaint.wav`; Icon `Tools/blender_make_spray_icon.py`.
+Züge sind 2 Fahrbahnen breit (`ATrackPlatform::Span`/`Covers`), Häuser auf der Strecke und querfahrende Autos sind entfernt.
+Treffer: `take damage 1..3.wav`; entgegenkommender Zug: `Train.wav`. Test: `-CatSprayAt=<s>`.
+
+## 3D-Hindernisse (schlichte Formen)
+Geländezonen alle 14–32 m (ab 30 m), je 2–4 Fahrbahnen belegt, eine bleibt frei. Pro Fahrbahn: 24 % Zug mit Rampe
+(Dach begehbar, 240–270 cm), 26 % Zug ohne Rampe (290–320 cm, zu hoch: ausweichen; 60 % davon kommen mit 3,5–6,5 m/s
+entgegen, Scheinwerfer vorn), 16 % Haus auf der Fahrbahn (Wand), sonst helle Rampe/Erhöhung. `ATrackPlatform`:
+`SetupTrain`/`SetupHouse`, `StepPlatform` (Bewegung), `SweepA` hält die Fahrbahn bis zur Begegnung frei.
+Zaun und Kiste sind jetzt 3D (Absperrung mit Streifen, Kiste mit Kreuz); 2D-Bilder nur noch als Deko/bewegte Deko.
+
+## Stand: nur Endlos-Modus
+Das Tutorial (Rundkurs) wurde entfernt; das Menü hat SPIELEN und SHOP. Abschnitte zu Rundkurs/Tutorial weiter unten sind
+nur noch historisch (der Layout-Code für Kurven existiert noch, wird aber nicht mehr benutzt).
+Sounds: `jump 1..n.wav` werden zufällig abgewechselt (leiser: `JumpVolume`/`LaneVolume` in `ACatAudio`),
+`Car honk.wav` hupt einmal, kurz bevor die Katze ein querfahrendes Auto erreicht.
 Projekt: `C:\Users\johan\Documents\Unreal Projects\ShadowCat\ShadowCat.uproject` (Ordner/Modul heißen technisch weiter ShadowCat).
 Map: `/Game/Maps/Run` (leer – Level, Licht, Nebel, Katze und Kamera entstehen zur Laufzeit).
 

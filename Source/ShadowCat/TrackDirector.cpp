@@ -17,6 +17,7 @@
 #include "InkDrops.h"
 #include "SlidingProp.h"
 #include "TrackPlatform.h"
+#include "Engine/StaticMesh.h"
 #include "InkMarks.h"
 #include "Engine/Texture2D.h"
 #include "Components/StaticMeshComponent.h"
@@ -40,8 +41,8 @@ ATrackDirector::ATrackDirector()
 	Difficulty.DoubleBlockChanceStart = 0.2f;
 	Difficulty.DoubleBlockChanceMax = 0.5f;
 	Difficulty.EnemyStartMeters = 250.f;
-	Difficulty.EnemyChanceStart = 0.05f;
-	Difficulty.EnemyChanceMax = 0.15f;
+	Difficulty.EnemyChanceStart = 0.1f;
+	Difficulty.EnemyChanceMax = 0.25f;
 	Difficulty.ItemChance = 0.f;
 
 	EndlessLayout.bStraight = true;
@@ -49,7 +50,7 @@ ATrackDirector::ATrackDirector()
 	EndlessLayout.LanesPerCircuit = 5;
 
 	FItemSpawnEntry Cloud;
-	Cloud.Buff = UBuff_InkCloud::StaticClass();
+	Cloud.Buff = UBuff_SprayPaint::StaticClass();
 	Cloud.Weight = 1.f;
 	Items.Add(Cloud);
 	FItemSpawnEntry Bomb;
@@ -63,6 +64,18 @@ void ATrackDirector::Initialize(ARunnerCat* InCat, ACatRunGameMode* InGame)
 	Cat = InCat;
 	Game = InGame;
 	Rng.GenerateNewSeed();
+	// Item-Pool absichern: leere Eintraege (z. B. umbenannte Klassen im Blueprint) entfernen, Spraydose und Bombe immer dabei
+	Items.RemoveAll([](const FItemSpawnEntry& E) { return !E.Buff || E.Weight <= 0.f; });
+	for (UClass* Need : { UBuff_SprayPaint::StaticClass(), UBuff_InkBomb::StaticClass() })
+	{
+		if (!Items.ContainsByPredicate([Need](const FItemSpawnEntry& E) { return E.Buff == Need; }))
+		{
+			FItemSpawnEntry E;
+			E.Buff = Need;
+			E.Weight = 1.f;
+			Items.Add(E);
+		}
+	}
 
 	FActorSpawnParameters P;
 	P.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -72,8 +85,8 @@ void ATrackDirector::Initialize(ARunnerCat* InCat, ACatRunGameMode* InGame)
 	Boss = GetWorld()->SpawnActor<ABossGiant>(BossCls ? BossCls : ABossGiant::StaticClass(), FTransform::Identity, P);
 	Coins = GetWorld()->SpawnActor<ACoinField>(ACoinField::StaticClass(), FTransform::Identity, P);
 	Marks = GetWorld()->SpawnActor<AInkMarks>(AInkMarks::StaticClass(), FTransform::Identity, P);
-	// bewegte Deko-Hindernisse: Autos fahren einmal quer, Kisten und Stoppschilder pendeln (Haeuser/Baeume bleiben Kulisse)
-	for (const TCHAR* Name : { TEXT("Car"), TEXT("Crate"), TEXT("Stopsign") })
+	// bewegte Deko-Hindernisse: Kisten und Stoppschilder pendeln (Autos fahren nicht mehr quer, Haeuser/Baeume bleiben Kulisse)
+	for (const TCHAR* Name : { TEXT("Crate"), TEXT("Stopsign") })
 	{
 		if (UTexture2D* T = LoadObject<UTexture2D>(nullptr, *FString::Printf(TEXT("/Game/Nature/T_Sprite_%s.T_Sprite_%s"), Name, Name), nullptr, LOAD_NoWarn | LOAD_Quiet))
 		{
@@ -84,13 +97,13 @@ void ATrackDirector::Initialize(ARunnerCat* InCat, ACatRunGameMode* InGame)
 	{
 		Boxes.Add(GetWorld()->SpawnActor<AItemBox>(AItemBox::StaticClass(), FTransform::Identity, P));
 	}
-	SetMode(ERunMode::Tutorial);
+	SetMode(ERunMode::Endless);
 }
 
 void ATrackDirector::SetMode(ERunMode InMode)
 {
 	Mode = InMode;
-	Layout = Mode == ERunMode::Endless ? EndlessLayout : TutorialLayout;
+	Layout = EndlessLayout;
 	Cat->SetLayout(Layout);
 	if (UItemSlotComponent* Slot = Cat->GetSlot())
 	{
@@ -105,7 +118,7 @@ void ATrackDirector::SetMode(ERunMode InMode)
 	Marks->ClearAll();
 	PlaceBoxes();
 	UE_LOG(LogShadowCat, Log, TEXT("Modus %s: %d Kurs(e) x %d Fahrbahnen, %d Kacheln"),
-		Mode == ERunMode::Endless ? TEXT("Endlos") : TEXT("Tutorial"), Layout.NumCircuits, Layout.LanesPerCircuit, Canvas->GetTotalSections());
+		TEXT("Endlos"), Layout.NumCircuits, Layout.LanesPerCircuit, Canvas->GetTotalSections());
 }
 
 void ATrackDirector::PlaceBoxes()
@@ -271,7 +284,7 @@ float ATrackDirector::GroundAt(int32 G, float InA) const
 	float H = 0.f;
 	for (const ATrackPlatform* P : Platforms)
 	{
-		if (P && P->IsLive() && P->Lane == G)
+		if (P && P->IsLive() && P->Covers(G))
 		{
 			H = FMath::Max(H, P->HeightAt(InA));
 		}
@@ -283,7 +296,9 @@ bool ATrackDirector::TerrainBusy(int32 G, float InA0, float InA1) const
 {
 	for (const ATrackPlatform* P : Platforms)
 	{
-		if (P && P->IsLive() && P->Lane == G && P->A1 > InA0 && P->A0 < InA1)
+		// fahrender Zug: auch die Strecke, die er noch zuruecklegt, ist belegt
+		const float Lo = P && P->Speed > 0.f ? FMath::Min(P->A0, P->SweepA) : (P ? P->A0 : 0.f);
+		if (P && P->IsLive() && P->Covers(G) && P->A1 > InA0 && Lo < InA1)
 		{
 			return true;
 		}
@@ -444,81 +459,138 @@ void ATrackDirector::StepTerrain()
 		NextTerrainA += 1000.f;
 		return;
 	}
+	// Abschnitte im Wechsel: eine Weile viele Zuege (manche fahren entgegen), dann Parkour (Hindernisse, nur einzelne
+	// stehende Waggon-Reihen). Andere Gelaende-Erhebungen gibt es nicht mehr, die Abgruende bleiben.
+	if (NextTerrainA >= NextSectionA)
+	{
+		bTrainSection = !bTrainSection;
+		NextSectionA = NextTerrainA + (bTrainSection ? Rng.FRandRange(12000.f, 22000.f) : Rng.FRandRange(18000.f, 30000.f));
+		UE_LOG(LogShadowCat, Log, TEXT("Abschnitt ab %.0f m: %s bis %.0f m"), NextTerrainA / 100.f, bTrainSection ? TEXT("ZUEGE") : TEXT("PARKOUR"), NextSectionA / 100.f);
+	}
 	const int32 N = Layout.LanesPerCircuit;
-	TArray<int32> Lanes;
-	for (int32 L = 0; L < N; ++L)
+	// Zuege sind zwei Gleise breit: moegliche Paare (Start-Gleis), gemischt; Zug-Abschnitt 2 Zuege (ein Gleis bleibt frei),
+	// Parkour 1 Zug
+	TArray<int32> Pairs;
+	for (int32 L = 0; L + 1 < N; ++L)
 	{
-		Lanes.Add(L);
+		Pairs.Add(L);
 	}
-	for (int32 I = Lanes.Num() - 1; I > 0; --I)
+	for (int32 I = Pairs.Num() - 1; I > 0; --I)
 	{
-		Lanes.Swap(I, Rng.RandHelper(I + 1));
+		Pairs.Swap(I, Rng.RandHelper(I + 1));
 	}
-	// 1-4 Fahrbahnen, mindestens eine bleibt flach
-	const int32 Count = Rng.RandRange(1, FMath::Max(1, N - 1));
+	const int32 Count = bTrainSection ? FMath::Max(1, (N - 1) / 2) : 1;
 	float ZoneEnd = NextTerrainA;
 	int32 Mask = 0;
 	FString Desc;
-	for (int32 K = 0; K < Count; ++K)
+	auto Acquire = [this]() -> ATrackPlatform*
 	{
-		const int32 L = Lanes[K];
-		ATrackPlatform* Pl = nullptr;
 		for (ATrackPlatform* P : Platforms)
 		{
 			if (P && !P->IsLive())
 			{
-				Pl = P;
-				break;
+				return P;
 			}
 		}
-		if (!Pl)
+		FActorSpawnParameters SP;
+		SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		ATrackPlatform* P = GetWorld()->SpawnActor<ATrackPlatform>(ATrackPlatform::StaticClass(), FTransform(FVector(0.f, 0.f, -5000.f)), SP);
+		Platforms.Add(P);
+		return P;
+	};
+	int32 Placed = 0;
+	TArray<ATrackPlatform*> Standing;
+	for (int32 K = 0; K < Pairs.Num() && Placed < Count; ++K)
+	{
+		const int32 L = Pairs[K];
+		const int32 PMask = 3 << L;
+		if (Mask & PMask)
 		{
-			FActorSpawnParameters SP;
-			SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-			Pl = GetWorld()->SpawnActor<ATrackPlatform>(ATrackPlatform::StaticClass(), FTransform(FVector(0.f, 0.f, -5000.f)), SP);
-			Platforms.Add(Pl);
+			continue;
 		}
-		// Rampe mit Plateau (hochlaufen) oder Erhoehung ohne Rampe (draufspringen oder ausweichen)
-		const bool bRamp = Rng.FRand() < 0.62f;
-		const float H = bRamp ? Rng.FRandRange(110.f, 260.f) : Rng.FRandRange(85.f, 160.f);
-		const float Ramp = bRamp ? H * Rng.FRandRange(2.8f, 3.6f) : 0.f;
-		const float Plateau = Rng.FRandRange(700.f, 1600.f);
-		const float A0 = NextTerrainA + Rng.FRandRange(0.f, 600.f);
-		Pl->Setup(L, A0, Ramp, Plateau, H, Layout.LaneLat(L), Layout.LaneWidth);
-		ZoneEnd = FMath::Max(ZoneEnd, A0 + Ramp + Plateau);
-		Mask |= 1 << L;
-		Desc += FString::Printf(TEXT(" F%d:%s%.0f"), L + 1, bRamp ? TEXT("Rampe") : TEXT("Block"), H);
-		// manchmal eine hoehere Stufe direkt dahinter: vom Plateau aus hochspringen
-		if (H < 200.f && Rng.FRand() < 0.4f)
+		++Placed;
+		ATrackPlatform* Pl = Acquire();
+		const float A0 = NextTerrainA + Rng.FRandRange(0.f, 700.f);
+		const float CenterLat = (Layout.LaneLat(L) + Layout.LaneLat(L + 1)) * 0.5f;
+		// Art: Lok mit Waggons (faehrt entgegen oder steht) oder nur eine stehende Reihe Waggons
+		const bool bCarsOnly = Rng.FRand() < (bTrainSection ? 0.3f : 0.6f);
+		const int32 Cars = bCarsOnly ? Rng.RandRange(2, 4) : Rng.RandRange(1, 3);
+		const float Len = ATrackPlatform::TrainLength(!bCarsOnly, Cars);
+		const float S = FMath::Max(Speed, 600.f);
+		float V = (!bCarsOnly && Rng.FRand() < (bTrainSection ? 0.6f : 0.25f)) ? Rng.FRandRange(350.f, 650.f) : 0.f;
+		// vereinzelt ein Schnellzug, der deutlich schneller entgegenkommt
+		if (V > 0.f && Rng.FRand() < 0.2f)
 		{
-			ATrackPlatform* Step = nullptr;
-			for (ATrackPlatform* P : Platforms)
+			V = Rng.FRandRange(1100.f, 1500.f);
+		}
+		float TA = A0;
+		if (V > 0.f)
+		{
+			// der Zug ueberfaehrt bis zur Begegnung die Strecke davor: weiter vorn starten, sodass er erst hinter dem
+			// letzten Zug auf diesen Gleisen ankommt
+			float Busy = -1.0e9f;
+			for (const ATrackPlatform* Q : Platforms)
 			{
-				if (P && !P->IsLive())
+				if (Q && Q != Pl && Q->IsLive() && (Q->Covers(L) || Q->Covers(L + 1)))
 				{
-					Step = P;
-					break;
+					Busy = FMath::Max(Busy, Q->A1);
 				}
 			}
-			if (!Step)
+			TA = FMath::Max(A0, Cat->GetA() + (Busy + 700.f - Cat->GetA()) * (S + V) / S);
+			const float Meet = Cat->GetA() + (TA - Cat->GetA()) * S / (S + V);
+			if (TA - A0 > 15000.f || ChasmBusy(Meet - 600.f, TA + Len) || TerrainBusy(L, Meet - 600.f, TA) || TerrainBusy(L + 1, Meet - 600.f, TA))
 			{
-				FActorSpawnParameters SP;
-				SP.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-				Step = GetWorld()->SpawnActor<ATrackPlatform>(ATrackPlatform::StaticClass(), FTransform(FVector(0.f, 0.f, -5000.f)), SP);
-				Platforms.Add(Step);
+				V = 0.f;
+				TA = A0;
 			}
-			const float H2 = H + Rng.FRandRange(80.f, 110.f);
-			const float Len2 = Rng.FRandRange(500.f, 900.f);
-			Step->Setup(L, A0 + Ramp + Plateau, 0.f, Len2, H2, Layout.LaneLat(L), Layout.LaneWidth);
-			ZoneEnd = FMath::Max(ZoneEnd, A0 + Ramp + Plateau + Len2);
-			Desc += FString::Printf(TEXT("+Stufe%.0f"), H2);
+			else
+			{
+				// Strecke, die der Zug ueberfaehrt, auf beiden Gleisen freiraeumen
+				for (AObstacle* O : Obstacles)
+				{
+					if (O && O->IsLive() && (PMask & (1 << O->Lane)) && O->A + O->HalfLength > Meet - 800.f && O->A - O->HalfLength < TA + Len)
+					{
+						if (O->GetType() == EObstacleType::Pit)
+						{
+							const float SL = Layout.SectionLength;
+							for (int32 Sec = FMath::RoundToInt((O->A - O->HalfLength) / SL); Sec < FMath::RoundToInt((O->A + O->HalfLength) / SL); ++Sec)
+							{
+								Canvas->ClearHole(O->Lane, Sec);
+							}
+						}
+						O->Retire();
+					}
+				}
+				for (AEnemyCube* E : Enemies)
+				{
+					if (E && E->IsLive() && (PMask & (1 << E->Lane)) && E->A > Meet - 800.f && E->A < TA + Len) E->Retire();
+				}
+				Coins->RemoveRange(Meet - 800.f, TA + Len + 200.f, PMask);
+				UpdatePitWalls();
+			}
+		}
+		Pl->SetupTrain(L, TA, !bCarsOnly, Cars, V, CenterLat, Layout.LaneWidth);
+		if (V <= 0.f)
+		{
+			Standing.Add(Pl);
+		}
+		Pl->SweepA = V > 0.f ? Cat->GetA() + (TA - Cat->GetA()) * S / (S + V) - 800.f : TA;
+		ZoneEnd = FMath::Max(ZoneEnd, Pl->A1);
+		Mask |= PMask;
+		Desc += FString::Printf(TEXT(" F%d-%d:%s%d%s"), L + 1, L + 2, bCarsOnly ? TEXT("Waggons") : TEXT("Lok+"), Cars, V > 0.f ? *FString::Printf(TEXT("(faehrt %.0f)"), V) : TEXT(""));
+	}	Coins->RemoveRange(NextTerrainA - 200.f, ZoneEnd + 200.f, Mask);
+	// auf stehenden Zuegen liegt immer eine Muenzreihe auf dem Dach (nur per Doppelsprung erreichbar)
+	for (ATrackPlatform* Pl : Standing)
+	{
+		const int32 CL = Pl->Lane + Rng.RandRange(0, 1);
+		for (float CA = Pl->A0 + 70.f; CA < Pl->A1 - 50.f; CA += 140.f)
+		{
+			Coins->AddCoin(Layout.Position(CA, Layout.LaneLat(CL)) + FVector(0.f, 0.f, Pl->HeightAt(CA)), CL, Layout.LaneLat(CL), CA);
 		}
 	}
-	Coins->RemoveRange(NextTerrainA - 200.f, ZoneEnd + 200.f, Mask);
-	UE_LOG(LogShadowCat, Log, TEXT("Gelaende bei %.0f m:%s"), NextTerrainA / 100.f, *Desc);
-	NextTerrainA = ZoneEnd + Rng.FRandRange(TerrainSpacing.X, TerrainSpacing.Y);
+	UE_LOG(LogShadowCat, Log, TEXT("Zuege bei %.0f m:%s"), NextTerrainA / 100.f, *Desc);
+	NextTerrainA = ZoneEnd + (bTrainSection ? Rng.FRandRange(700.f, 1600.f) : Rng.FRandRange(TerrainSpacing.X, TerrainSpacing.Y));
 }
-
 void ATrackDirector::StepSliders(float DeltaTime)
 {
 	const float S = FMath::Max(Speed, 300.f);
@@ -535,6 +607,12 @@ void ATrackDirector::StepSliders(float DeltaTime)
 			continue;
 		}
 		P->StepSlide(DeltaTime, FMath::Max(0.f, Ahead) / S);
+		// Auto hupt einmal, kurz bevor die Katze es erreicht
+		if (P->IsOneWay() && !P->bHonked && Ahead > 0.f && Ahead < S * 1.6f && Game)
+		{
+			P->bHonked = true;
+			Game->PlayCarHonk();
+		}
 	}
 	if (SlideTex.Num() == 0 || !bHazards || GetMeters() < SlideStartMeters)
 	{
@@ -599,47 +677,29 @@ void ATrackDirector::StepSliders(float DeltaTime)
 		Prop = GetWorld()->SpawnActor<ASlidingProp>(ASlidingProp::StaticClass(), FTransform(FVector(0.f, 0.f, -5000.f)), P);
 		Sliders.Add(Prop);
 	}
-	// Auto 45 %, sonst Kiste oder Stoppschild
-	UTexture2D* Tex = SlideTex[Rng.RandHelper(SlideTex.Num())];
-	for (UTexture2D* T : SlideTex)
-	{
-		if (T->GetName().Contains(TEXT("Car")) && Rng.FRand() < 0.45f)
-		{
-			Tex = T;
-		}
-	}
-	const FString Name = Tex->GetName();
-	const bool bCar = Name.Contains(TEXT("Car"));
-	const bool bCrate = Name.Contains(TEXT("Crate"));
+	// Lore (3D-Modell) faehrt quer ueber die Gleise hin und her; niedrig genug zum Drueberspringen
+	static UStaticMesh* CartMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Models/SM_Minecart.SM_Minecart"), nullptr, LOAD_NoWarn | LOAD_Quiet);
 	const int32 N = Layout.LanesPerCircuit;
 	const float Half = N * Layout.LaneWidth * 0.5f;
 	FVector Pos, Fwd;
 	Layout.Sample(NextSlideA, 0.f, Pos, Fwd);
-	float PropH, SlideSpeed;
-	if (bCar)
+	float PropH = 85.f;
+	const float SlideSpeed = Rng.FRandRange(220.f, 330.f);
+	FString Name = TEXT("Lore");
+	if (CartMesh)
 	{
-		// faehrt einmal quer: ist beim Eintreffen der Katze irgendwo auf der Strasse (Zeitpunkt leicht gestreut)
-		const float Dir = Rng.FRand() < 0.5f ? 1.f : -1.f;
-		PropH = Rng.FRandRange(220.f, 250.f);
-		// Bild zeigt nach rechts (+Y); faehrt es nach links, wird es gespiegelt
-		Prop->Setup(Tex, PropH, 0.85f, Dir);
-		Prop->Height = 999.f;
-		SlideSpeed = Rng.FRandRange(380.f, 520.f);
-		const float Arrive = (NextSlideA - Cat->GetA()) / FMath::Max(Speed, 300.f) + Rng.FRandRange(-0.35f, 0.35f);
-		const float Edge = Half + 450.f;
-		Prop->LaunchCross(Pos, NextSlideA, -Dir * Edge, Dir * Edge, SlideSpeed, FMath::Max(0.f, Arrive), Rng.FRandRange(-Half + 60.f, Half - 60.f));
+		Prop->SetupModel(CartMesh, 150.f, 100.f, PropH);
 	}
 	else
 	{
-		// Kiste (drueberspringbar) oder Stoppschild (nur der Pfahl trifft) pendeln von Rand zu Rand
-		PropH = bCrate ? 115.f : 340.f;
-		Prop->Setup(Tex, PropH, bCrate ? 0.8f : 0.3f);
-		Prop->Height = bCrate ? 108.f : 999.f;
-		SlideSpeed = Rng.FRandRange(220.f, 320.f);
-		Prop->Launch(Pos, NextSlideA, -Half + 40.f, Half - 40.f, SlideSpeed, Rng.FRand());
+		UTexture2D* Tex = SlideTex[Rng.RandHelper(SlideTex.Num())];
+		Name = Tex->GetName();
+		PropH = 115.f;
+		Prop->Setup(Tex, PropH, 0.8f);
+		Prop->Height = 108.f;
 	}
-	Coins->RemoveRange(NextSlideA - 300.f, NextSlideA + 300.f);
-	UE_LOG(LogShadowCat, Log, TEXT("Deko wird Hindernis: %s (%.0f cm) bei %.0f m, %s mit %.0f cm/s"), *Name, PropH, NextSlideA / 100.f, bCar ? TEXT("faehrt quer") : TEXT("pendelt"), SlideSpeed);
+	Prop->Launch(Pos, NextSlideA, -Half + 80.f, Half - 80.f, SlideSpeed, Rng.FRand());
+	UE_LOG(LogShadowCat, Log, TEXT("Bewegtes Hindernis: %s (%.0f cm) bei %.0f m, pendelt mit %.0f cm/s"), *Name, PropH, NextSlideA / 100.f, SlideSpeed);	Coins->RemoveRange(NextSlideA - 300.f, NextSlideA + 300.f);
 	NextSlideA += Rng.FRandRange(SlideSpacing.X, SlideSpacing.Y);
 }
 
@@ -665,6 +725,9 @@ void ATrackDirector::ResetTrack()
 	NextCoinA = GetStartA() + 2500.f;
 	NextSlideA = GetStartA() + SlideStartMeters * 100.f;
 	NextTerrainA = GetStartA() + TerrainStartMeters * 100.f;
+	bTrainSection = false;
+	NextSectionA = GetStartA() + 15000.f;
+	SpeedCurse = 1.f;
 	NextChasmA = GetStartA() + ChasmStartMeters * 100.f;
 	ChasmZones.Reset();
 	Marks->ClearAll();
@@ -742,7 +805,10 @@ void ATrackDirector::StepDirector(float DeltaTime)
 		RunAutopilot();
 	}
 	// im Loch kaum Vorwaertsbewegung (faellt nicht durch die Schachtwand); danach hinter dem Loch weiter
-	Cat->StepRun(DeltaTime, Cat->IsFalling() ? Speed * 0.15f : Speed);
+	// Fluch "doppeltes Tempo": weich hoch und wieder herunter
+	SpeedCurse = FMath::FInterpConstantTo(SpeedCurse, Cat->GetBuffs()->HasBuff(UBuff_CurseSpeed::StaticClass()) ? 2.f : 1.f, DeltaTime, 2.f);
+	const float RunSpeed = Speed * SpeedCurse;
+	Cat->StepRun(DeltaTime, Cat->IsFalling() ? RunSpeed * 0.15f : RunSpeed);
 	if (Cat->ConsumeFallEnd())
 	{
 		Cat->WarpToA(FMath::Max(Cat->GetA(), FallRespawnA));
@@ -785,6 +851,28 @@ void ATrackDirector::StepDirector(float DeltaTime)
 		StepTerrain();
 		StepEndlessCoins(DeltaTime);
 		StepSliders(DeltaTime);
+		// Zuggeraeusch: lauter, je naeher ein fahrender Zug ist (voraus, daneben oder gerade vorbei; seitlich gedaempft)
+		float Near = 0.f;
+		const float CatLat = Cat->GetLanes()->GetLateralOffset();
+		for (ATrackPlatform* Pl : Platforms)
+		{
+			if (Pl)
+			{
+				Pl->StepPlatform(DeltaTime);
+				if (Pl->IsLive() && Pl->Speed > 0.f)
+				{
+					const float CA = Cat->GetA();
+					const float DA = CA < Pl->A0 ? Pl->A0 - CA : (CA > Pl->A1 ? CA - Pl->A1 : 0.f);
+					const float DL = FMath::Abs(Layout.LaneLat(Pl->Lane) - CatLat) * 2.5f;
+					const float Dist = FMath::Sqrt(DA * DA + DL * DL);
+					Near = FMath::Max(Near, FMath::Square(FMath::Clamp(1.f - Dist / 3500.f, 0.f, 1.f)));
+				}
+			}
+		}
+		if (Game)
+		{
+			Game->SetTrainProximity(bRunning ? Near : 0.f);
+		}
 	}
 	RecycleBehind();
 }
@@ -895,6 +983,16 @@ int32 ATrackDirector::BombBlast(float Range)
 			++N;
 		}
 	}
+	// Zuege, die in den Bereich hineinragen, werden ebenfalls weggesprengt
+	for (ATrackPlatform* Pl : Platforms)
+	{
+		if (Pl && Pl->IsLive() && Pl->A1 > CatA - 200.f && Pl->A0 < CatA + Range)
+		{
+			Burst(FVector(FMath::Max(Pl->A0, CatA + 300.f), Layout.LaneLat(Pl->Lane), 160.f), 0.05f, false, 3.f);
+			Pl->Retire();
+			++N;
+		}
+	}
 	// weisse Tinte des Riesen vorn wegputzen
 	for (int32 I = Puddles.Num() - 1; I >= 0; --I)
 	{
@@ -940,30 +1038,73 @@ void ATrackDirector::InkSmearArea(int32 Circuit, float CenterA, float HalfLen, b
 		{
 			const float A0 = Layout.AFromLaneArc(G, Arc0 + D);
 			const float A1 = Layout.AFromLaneArc(G, Arc0 + FMath::Min(D + Step, HalfLen));
-			const float Z0 = Layout.bStraight ? GroundAt(G, A0) : 0.f;
-			const float Z1 = Layout.bStraight ? GroundAt(G, A1) : 0.f;
-			if (FMath::Abs(Z1 - Z0) > 35.f)
-			{
-				continue; // senkrechte Kante (Block/Stufe): keine Tinte in der Luft
-			}
-			const float AM = (A0 + A1) * 0.5f;
-			const float ZM = (Z0 + Z1) * 0.5f;
+			// kein Gelaende mehr (nur Zuege, die die Bombe wegsprengt): Tinte liegt flach auf allen Gleisen
+			const float Z0 = 0.f;
+			const float Z1 = 0.f;
 			auto SameHeight = [&](int32 NL)
 			{
-				return NL >= 0 && NL < N && FMath::Abs((Layout.bStraight ? GroundAt(Circuit * N + NL, AM) : 0.f) - ZM) < 6.f;
+				return NL >= 0 && NL < N;
 			};
 			// Seitenlage: +Lat-Seite ist die naechste Fahrbahn (L + 1)
-			const float ExtLo = SameHeight(L - 1) ? Ext : 0.f;
-			const float ExtHi = SameHeight(L + 1) ? Ext : 0.f;
+			// am Strassenrand etwas ueber die Kante hinaus (der gewellte Rand frisst sonst ins aeussere Gleis)
+			const float ExtLo = SameHeight(L - 1) ? Ext : 95.f;
+			const float ExtHi = SameHeight(L + 1) ? Ext : 95.f;
 			const float Lat = Layout.LaneLat(G) + (ExtHi - ExtLo) * 0.5f;
 			const float W = Layout.LaneWidth + ExtLo + ExtHi;
 			const FVector P0 = Layout.Position(A0, Lat) + FVector(0.f, 0.f, Z0 + 1.5f);
 			const FVector P1 = Layout.Position(A1, Lat) + FVector(0.f, 0.f, Z1 + 1.5f);
 			// Welle von der Katze nach vorn (bzw. von der Mitte nach aussen)
 			const float Delay = bFromBack ? (D + HalfLen) / FMath::Max(1.f, 2.f * HalfLen) * 0.6f : FMath::Abs(D) / FMath::Max(1.f, HalfLen) * 0.3f;
-			Marks->AddSheet(P0, P1, W, 3.6f, Delay, ExtLo > 0.f, ExtHi > 0.f);
+			Marks->AddSheet(P0, P1, W, 3.6f, Delay, SameHeight(L - 1), SameHeight(L + 1));
 		}
 	}
+}
+
+void ATrackDirector::OnSprayFlight(bool bStart, float Duration)
+{
+	if (Game)
+	{
+		Game->SetSpraySound(bStart);
+	}
+	if (!bStart)
+	{
+		// nicht eingesammelte Muenzen der Luft-Ebene verschwinden
+		Coins->RemoveAbove(AirLevelZ * 0.5f);
+		return;
+	}
+	if (!Layout.bStraight)
+	{
+		return;
+	}
+	// Muenzreihen (bis 20) auf den Luft-Fahrbahnen; zwischen den Reihen wechselt die Fahrbahn
+	const int32 N = Layout.LanesPerCircuit;
+	const float S = FMath::Max(Speed, 600.f);
+	const float Step = 135.f;
+	float A = Cat->GetA() + S * 0.9f;              // nach dem Aufsteigen
+	const float End = Cat->GetA() + S * (Duration - 0.5f);
+	int32 Lane = Cat->GetLanes()->GetTargetLane();
+	int32 Rows = 0;
+	Coins->RemoveAbove(AirLevelZ * 0.5f);
+	while (A < End)
+	{
+		const int32 Count = FMath::Min(Rng.RandRange(10, 20), FMath::FloorToInt((End - A) / Step) + 1);
+		for (int32 K = 0; K < Count; ++K)
+		{
+			const float CA = A + K * Step;
+			// leichte Welle in der Hoehe
+			const float Z = AirLevelZ - 35.f + 30.f * FMath::Sin(K * 0.45f);
+			Coins->AddCoin(Layout.Position(CA, Layout.LaneLat(Lane)) + FVector(0.f, 0.f, Z - Coins->FloatHeight + 40.f), Lane, Layout.LaneLat(Lane), CA);
+		}
+		A += Count * Step + 320.f;
+		++Rows;
+		int32 Dir = Rng.RandRange(1, 2) * (Rng.FRand() < 0.5f ? -1 : 1);
+		if (Lane + Dir < 0 || Lane + Dir >= N)
+		{
+			Dir = -Dir;
+		}
+		Lane = FMath::Clamp(Lane + Dir, 0, N - 1);
+	}
+	UE_LOG(LogShadowCat, Log, TEXT("Spraydose: Flug %.1f s, %d Muenzreihen in der Luft-Ebene"), Duration, Rows);
 }
 
 void ATrackDirector::InkSmearTrail(int32 Circuit, float CatA)
@@ -1186,7 +1327,8 @@ void ATrackDirector::CheckCollisions()
 	const int32 CurLane = Cat->GetLanes()->GetCurrentLane();
 	const float Ground = Layout.bStraight ? GroundAt(CurLane, Cat->GetA()) : 0.f;
 	Cat->SetSupportZ(Ground);
-	if (Cat->IsInvulnerable())
+	// Spraydose: oben in der Luft-Ebene gibt es keine Hindernisse
+	if (Cat->IsInvulnerable() || Cat->IsFlying())
 	{
 		return;
 	}
@@ -1315,8 +1457,17 @@ void ATrackDirector::CheckCollisions()
 	for (AEnemyCube* E : Enemies)
 	{
 		const float EZ = E ? E->GetActorLocation().Z : 0.f;
-		if (E && E->IsDangerous() && Overlaps(E) && FeetZ < EZ + 35.f && FeetZ + Cat->CollisionHeight > EZ - 35.f && Hit(E))
+		if (E && E->IsDangerous() && Overlaps(E) && FeetZ < EZ + 35.f && FeetZ + Cat->CollisionHeight > EZ - 35.f)
 		{
+			// kein Lebensverlust, sondern 10 s Fluch: Steuerung verdreht, Bild gespiegelt oder doppeltes Tempo
+			static const TSubclassOf<UCatBuff> Curses[] = { UBuff_CurseControls::StaticClass(), UBuff_CurseMirror::StaticClass(), UBuff_CurseSpeed::StaticClass() };
+			UCatBuff* B = Cat->GetBuffs()->AddBuff(Curses[Rng.RandHelper(3)]);
+			Burst(E->GetActorLocation() + FVector(0.f, 0.f, 60.f), 0.7f, false, 1.3f);
+			E->Retire();
+			if (Game && B)
+			{
+				Game->OnCurse(B->DisplayName);
+			}
 			return;
 		}
 	}
@@ -1526,14 +1677,25 @@ void ATrackDirector::RunAutopilot()
 		{
 			continue;
 		}
-		const int32 L = P->Lane - Base;
+		// Zuege belegen zwei Fahrbahnen
+		for (int32 Sub = 0; Sub < P->Span; ++Sub)
+		{
+		const int32 G = P->Lane + Sub;
+		const int32 L = G - Base;
 		const float CatA = Cat->GetA();
 		if (L < 0 || L >= N || P->A1 < CatA - Cat->CollisionHalfLength)
 		{
 			continue;
 		}
 		const float Front = P->A0 - CatA;
-		const bool bMine = P->Lane == Lanes->GetTargetLane();
+		const bool bMine = G == Lanes->GetTargetLane();
+		if (P->IsWall())
+		{
+			// Zug ohne Rampe: Fahrbahn gesperrt; ein entgegenkommender Zug ist entsprechend frueher da
+			const float SC = FMath::Max(Speed, 600.f);
+			Clear[L] = FMath::Min(Clear[L], FMath::Max(Front * SC / (SC + P->Speed), 0.f));
+			continue;
+		}
 		if (!bMine)
 		{
 			if (Front <= FMath::Max(Speed, 600.f) * 0.4f)
@@ -1557,6 +1719,7 @@ void ATrackDirector::RunAutopilot()
 				UE_LOG(LogShadowCat, Log, TEXT("AUTOPILOT springt auf Erhoehung"));
 				Cat->RequestJump();
 			}
+		}
 		}
 	}
 	// gleitende Deko: Fahrbahnen sperren, auf denen sie beim Eintreffen der Katze voraussichtlich ist

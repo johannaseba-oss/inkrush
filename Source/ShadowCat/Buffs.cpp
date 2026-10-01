@@ -287,7 +287,7 @@ void UBuff_Invincible::BuildPickupVisual(AActor* Pickup, USceneComponent* Root) 
 #undef LOCTEXT_NAMESPACE
 
 // ------------------------------------------------------------------------------------------------
-// Tintenwolke
+// Spraydose
 // ------------------------------------------------------------------------------------------------
 namespace
 {
@@ -299,68 +299,126 @@ namespace
 	}
 }
 
-UBuff_InkCloud::UBuff_InkCloud()
+UBuff_SprayPaint::UBuff_SprayPaint()
 {
-	DisplayName = NSLOCTEXT("ShadowCatBuffs", "InkCloud", "TINTENWOLKE");
-	Icon = TSoftObjectPtr<UTexture2D>(FSoftObjectPath(TEXT("/Game/UI/T_Icon_InkCloud.T_Icon_InkCloud")));
-	Duration = 4.f;
+	DisplayName = NSLOCTEXT("ShadowCatBuffs", "SprayPaint", "SPRAYDOSE");
+	Icon = TSoftObjectPtr<UTexture2D>(FSoftObjectPath(TEXT("/Game/UI/T_Icon_Spaypaint.T_Icon_Spaypaint")));
+	Duration = 5.f;
 }
 
-void UBuff_InkCloud::OnBegin()
+void UBuff_SprayPaint::OnBegin()
 {
-	PuffMat = RunAssets::NewMID(TEXT("M_Soft"), this);
-	if (PuffMat)
+	// kleine Spraydose auf dem Ruecken (schlichter Zylinder: hell mit dunklem Band, Kappe und Duese unten)
+	UMaterialInterface* CanM = RunAssets::Mono(0.88f, 0.6f);
+	UMaterialInterface* Dark = RunAssets::Mono(0.02f, 0.f);
+	USceneComponent* Can = AddPivot(CanOffset);
+	if (Can)
 	{
-		PuffMat->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.f, 0.f, 0.f));
-		PuffMat->SetScalarParameterValue(TEXT("Softness"), 1.2f);
+		Can->SetRelativeRotation(FRotator(-25.f, 0.f, 0.f));
+		AddVisual(TEXT("Cylinder"), FVector(0.f, 0.f, 0.f), FVector(0.26f, 0.26f, 0.52f), FRotator::ZeroRotator, CanM, Can);
+		AddVisual(TEXT("Cylinder"), FVector(0.f, 0.f, 6.f), FVector(0.265f, 0.265f, 0.12f), FRotator::ZeroRotator, Dark, Can);
+		AddVisual(TEXT("Sphere"), FVector(0.f, 0.f, 26.f), FVector(0.24f, 0.24f, 0.16f), FRotator::ZeroRotator, CanM, Can);
+		AddVisual(TEXT("Cylinder"), FVector(0.f, 0.f, 34.f), FVector(0.1f, 0.1f, 0.1f), FRotator::ZeroRotator, Dark, Can);
+		AddVisual(TEXT("Cylinder"), FVector(0.f, 0.f, -29.f), FVector(0.1f, 0.1f, 0.1f), FRotator::ZeroRotator, Dark, Can);
 	}
-	// schwarze Wolke unter den Pfoten, auf der die Katze fliegt
-	for (int32 I = 0; I < 9; ++I)
+	// Spruehstrahl: zusammenhaengender, schwarz glaenzender Fluessigkeitsstrahl aus der Duese (Bogen aus Rohrstuecken
+	// mit runden Gelenken, wellt sich und wird nach hinten breiter), am Ende ein weicher Spruehnebel
+	UMaterialInterface* Ink = RunAssets::Mono(0.01f, 0.f);
+	for (int32 I = 0; I < StreamPoints; ++I)
 	{
-		Puffs.Add(AddVisual(TEXT("Sphere"), FVector::ZeroVector, FVector(0.9f, 0.9f, 0.5f), FRotator::ZeroRotator, PuffMat));
+		Joints.Add(AddVisual(TEXT("Sphere"), FVector::ZeroVector, FVector(0.05f), FRotator::ZeroRotator, Ink));
+		if (I + 1 < StreamPoints)
+		{
+			Segs.Add(AddVisual(TEXT("Cylinder"), FVector::ZeroVector, FVector(0.05f), FRotator::ZeroRotator, Ink));
+		}
 	}
+	MistMat = RunAssets::NewMID(TEXT("M_Soft"), this);
+	if (MistMat)
+	{
+		MistMat->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.f, 0.f, 0.f));
+		MistMat->SetScalarParameterValue(TEXT("Softness"), 1.6f);
+		MistMat->SetScalarParameterValue(TEXT("Opacity"), 0.55f);
+	}
+	Mist.Add(AddVisual(TEXT("Sphere"), FVector::ZeroVector, FVector(0.3f), FRotator::ZeroRotator, MistMat));
 	// Shop: laengerer Flug
 	Duration += Cat->FlyBonus;
 	Remaining = Duration;
 	Cat->StartFly(FlyHeight);
+	if (ATrackDirector* Dir = GetDirector())
+	{
+		Dir->OnSprayFlight(true, Duration);
+	}
 }
 
-bool UBuff_InkCloud::AbsorbsHit(EHazardKind Kind) const
+bool UBuff_SprayPaint::AbsorbsHit(EHazardKind Kind) const
 {
-	return Cat && Cat->bFlyInvulnerable;
+	// oben in der Luft-Ebene gibt es keine Hindernisse
+	return true;
 }
 
-void UBuff_InkCloud::OnRefreshed()
+void UBuff_SprayPaint::OnRefreshed()
 {
-	// gestapelt: Flug verlaengert (Dauer wurde schon zurueckgesetzt)
+	// gestapelt: Flug verlaengert (Dauer wurde schon zurueckgesetzt), neue Muenzreihen
 	Cat->StartFly(FlyHeight);
+	if (ATrackDirector* Dir = GetDirector())
+	{
+		Dir->OnSprayFlight(true, Duration);
+	}
 }
 
-void UBuff_InkCloud::OnEnd()
+void UBuff_SprayPaint::OnEnd()
 {
 	Cat->StopFly();
+	// Landung abgesichert: kurz unverwundbar (Shop "Sichere Landung": laenger)
+	Cat->GrantInvulnerability(Cat->bFlyInvulnerable ? 3.f : 1.2f);
+	if (ATrackDirector* Dir = GetDirector())
+	{
+		Dir->OnSprayFlight(false, 0.f);
+	}
 }
 
-void UBuff_InkCloud::OnTick(float DeltaTime)
+void UBuff_SprayPaint::OnTick(float DeltaTime)
 {
-	if (PuffMat)
+	const float Fade = GetFade() * GetEndingBlink();
+	// Duese der Dose (schraeg nach hinten-unten gerichtet)
+	const FVector Nozzle = CanOffset + FVector(-16.f, 0.f, -32.f);
+	// Punkte des Strahls: Bogen nach hinten-unten, Welle wird nach hinten staerker, Dicke waechst
+	TArray<FVector> Pts;
+	TArray<float> Rad;
+	for (int32 I = 0; I < StreamPoints; ++I)
 	{
-		PuffMat->SetScalarParameterValue(TEXT("Opacity"), 0.85f * GetFade() * GetEndingBlink());
+		const float T = I / float(StreamPoints - 1);
+		const float Wob = (1.5f + 15.f * T) * FMath::Sin(Age * 21.f - I * 0.85f);
+		const float WobZ = (1.f + 7.f * T) * FMath::Sin(Age * 17.f - I * 0.7f + 1.3f);
+		Pts.Add(Nozzle + FVector(-240.f * T, Wob, -26.f * T - 125.f * T * T + WobZ));
+		Rad.Add((2.5f + 8.f * T) * (1.f + 0.12f * FMath::Sin(Age * 30.f + I * 1.7f)) * Fade);
 	}
-	for (int32 I = 0; I < Puffs.Num(); ++I)
+	for (int32 I = 0; I < Joints.Num(); ++I)
 	{
-		if (!Puffs[I])
+		if (Joints[I])
+		{
+			Joints[I]->SetRelativeLocation(Pts[I]);
+			Joints[I]->SetRelativeScale3D(FVector(Rad[I] * 2.f / 100.f));
+		}
+	}
+	for (int32 I = 0; I < Segs.Num(); ++I)
+	{
+		if (!Segs[I])
 		{
 			continue;
 		}
-		// wabernder Kranz unter der Katze, etwas nach hinten gezogen
-		const float Ang = I / float(Puffs.Num()) * 2.f * PI + Age * 1.3f;
-		const float W = 1.f + 0.2f * FMath::Sin(Age * 6.f + I);
-		Puffs[I]->SetRelativeLocation(FVector(FMath::Cos(Ang) * 55.f - 25.f, FMath::Sin(Ang) * 45.f, -18.f + 8.f * FMath::Sin(Age * 4.f + I * 1.3f)));
-		Puffs[I]->SetRelativeScale3D(FVector(1.1f * W, 0.95f * W, 0.55f));
+		const FVector D = Pts[I + 1] - Pts[I];
+		const float R = (Rad[I] + Rad[I + 1]) * 0.5f;
+		Segs[I]->SetRelativeLocationAndRotation((Pts[I] + Pts[I + 1]) * 0.5f, FRotationMatrix::MakeFromZ(D.GetSafeNormal()).Rotator());
+		Segs[I]->SetRelativeScale3D(FVector(R * 2.f / 100.f, R * 2.f / 100.f, (D.Size() + 2.f) / 100.f));
 	}
-}
-
+	if (Mist.Num() > 0 && Mist[0])
+	{
+		// Spruehnebel am Ende des Strahls
+		const float F = 1.f + 0.2f * FMath::Sin(Age * 19.f);
+		Mist[0]->SetRelativeLocation(Pts.Last() + FVector(-25.f, 0.f, -10.f));
+		Mist[0]->SetRelativeScale3D(FVector(0.75f, 0.55f, 0.4f) * F * Fade);
+	}}
 // ------------------------------------------------------------------------------------------------
 // Tintenbombe
 // ------------------------------------------------------------------------------------------------

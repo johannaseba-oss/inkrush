@@ -1,6 +1,7 @@
 #include "RunCamera.h"
 #include "RunTypes.h"
 #include "Camera/CameraComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/GameViewportClient.h"
@@ -40,6 +41,14 @@ ARunCamera::ARunCamera()
 	RunAssets::MakeCheap(Moon);
 }
 
+void ARunCamera::SetMirror(float Amount)
+{
+	if (MirrorMat)
+	{
+		MirrorMat->SetScalarParameterValue(TEXT("Amount"), FMath::Clamp(Amount, 0.f, 1.f));
+	}
+}
+
 void ARunCamera::SetMenuMode(bool bInMenu, bool bInstant)
 {
 	bMenu = bInMenu;
@@ -53,6 +62,13 @@ void ARunCamera::SetMenuMode(bool bInMenu, bool bInstant)
 		if (UMaterialInterface* Cel = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/PP_CelMono.PP_CelMono"), nullptr, LOAD_NoWarn | LOAD_Quiet))
 		{
 			Camera->PostProcessSettings.WeightedBlendables.Array.Add(FWeightedBlendable(1.f, Cel));
+		}
+		// Spiegelung fuer den Fluch "Bild gespiegelt" (Amount 0 = aus)
+		MirrorMat = RunAssets::NewMID(TEXT("PP_Mirror"), this);
+		if (MirrorMat)
+		{
+			MirrorMat->SetScalarParameterValue(TEXT("Amount"), 0.f);
+			Camera->PostProcessSettings.WeightedBlendables.Array.Add(FWeightedBlendable(1.f, MirrorMat));
 		}
 		bCelAdded = true;
 	}
@@ -93,7 +109,8 @@ void ARunCamera::ComputeRunView(const FVector& CatLoc, FVector& OutLoc, FRotator
 		return;
 	}
 	// geglaettete Bodenposition: Spurwechsel und Kurven wirken ruhiger, Spruenge heben die Kamera nur leicht
-	const FVector Base(SmoothPos.X, SmoothPos.Y, CatLoc.Z * 0.35f);
+	// hoch oben (Spraydose, Luft-Ebene) zieht die Kamera staerker mit, damit die Katze im Bild bleibt
+	const FVector Base(SmoothPos.X, SmoothPos.Y, CatLoc.Z * 0.35f + FMath::Max(0.f, CatLoc.Z - 300.f) * 0.8f);
 	OutLoc = Base - F * BackDistance + FVector(0.f, 0.f, Height);
 	const FVector Look = Base + F * LookAhead + FVector(0.f, 0.f, LookHeight);
 	OutRot = (Look - OutLoc).Rotation();

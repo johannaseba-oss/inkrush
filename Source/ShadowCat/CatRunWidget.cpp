@@ -14,6 +14,7 @@
 #include "Components/ProgressBar.h"
 #include "Components/SafeZone.h"
 #include "Components/SizeBox.h"
+#include "Components/Slider.h"
 #include "Components/Spacer.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
@@ -64,6 +65,18 @@ namespace
 	}
 }
 
+namespace
+{
+	/** Button nie fokussierbar (sonst landen Leertaste/Pfeile im Button statt im Spiel); vor dem Aufbau des Slate-Widgets setzen */
+	void NoFocus(UButton* B)
+	{
+		if (FBoolProperty* P = FindFProperty<FBoolProperty>(UButton::StaticClass(), TEXT("IsFocusable")))
+		{
+			P->SetPropertyValue_InContainer(B, false);
+		}
+	}
+}
+
 FString UCatRunWidget::FormatTime(float Seconds)
 {
 	const int32 S = FMath::Max(0, FMath::FloorToInt(Seconds));
@@ -97,7 +110,7 @@ UWidget* UCatRunWidget::MakeButton(const FString& Label, float Width, float Heig
 	Box->SetWidthOverride(Width);
 	Box->SetHeightOverride(Height);
 
-	UButton* Btn = WidgetTree->ConstructWidget<UButton>();
+	UButton* Btn = WidgetTree->ConstructWidget<UButton>(); NoFocus(Btn);
 	FButtonStyle Style;
 	const FLinearColor Fill = bPrimary ? FLinearColor(0.93f, 0.93f, 0.93f, 1.f) : FLinearColor(0.f, 0.f, 0.f, 0.55f);
 	const FLinearColor Line = bPrimary ? FLinearColor::Transparent : FLinearColor(1.f, 1.f, 1.f, 0.75f);
@@ -121,6 +134,63 @@ UWidget* UCatRunWidget::MakeButton(const FString& Label, float Width, float Heig
 	OutButton = Btn;
 	OutLabel = Text;
 	return Box;
+}
+
+UWidget* UCatRunWidget::MakeVolumeRow(const FString& Label, bool bMusic)
+{
+	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>();
+	USizeBox* LabelBox = WidgetTree->ConstructWidget<USizeBox>();
+	LabelBox->SetWidthOverride(190.f);
+	UTextBlock* T = MakeText(Label, 32, White);
+	T->SetJustification(ETextJustify::Left);
+	LabelBox->AddChild(T);
+	Row->AddChildToHorizontalBox(LabelBox)->SetVerticalAlignment(VAlign_Center);
+	USizeBox* SliderBox = WidgetTree->ConstructWidget<USizeBox>();
+	SliderBox->SetWidthOverride(440.f);
+	SliderBox->SetHeightOverride(70.f);
+	USlider* S = WidgetTree->ConstructWidget<USlider>();
+	S->SetMinValue(0.f);
+	S->SetMaxValue(1.f);
+	S->SetStepSize(0.05f);
+	S->SetSliderBarColor(FLinearColor(1.f, 1.f, 1.f, 0.85f));
+	S->SetSliderHandleColor(White);
+	FSliderStyle Style = S->GetWidgetStyle();
+	Style.SetBarThickness(8.f);
+	Style.NormalThumbImage.ImageSize = FVector2D(44.f, 44.f);
+	Style.HoveredThumbImage.ImageSize = FVector2D(44.f, 44.f);
+	S->SetWidgetStyle(Style);
+	if (bMusic)
+	{
+		S->OnValueChanged.AddDynamic(this, &UCatRunWidget::HandleMusicVolume);
+		MusicSliders.Add(S);
+	}
+	else
+	{
+		S->OnValueChanged.AddDynamic(this, &UCatRunWidget::HandleSfxVolume);
+		SfxSliders.Add(S);
+	}
+	SliderBox->AddChild(S);
+	Row->AddChildToHorizontalBox(SliderBox)->SetVerticalAlignment(VAlign_Center);
+	return Row;
+}
+
+void UCatRunWidget::SetSprayOverlay(float Alpha)
+{
+	if (!SprayOverlay)
+	{
+		return;
+	}
+	SprayOverlay->SetVisibility(Alpha > 0.001f ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	// leichtes Wabern, damit der Nebel lebendig wirkt
+	SprayOverlay->SetRenderOpacity(Alpha * (0.88f + 0.06f * FMath::Sin(Time * 9.f)));
+}
+
+void UCatRunWidget::SetVolumeSliders(float Music, float Sfx)
+{
+	bSyncingSliders = true;
+	for (USlider* S : MusicSliders) { if (S) S->SetValue(Music); }
+	for (USlider* S : SfxSliders) { if (S) S->SetValue(Sfx); }
+	bSyncingSliders = false;
 }
 
 UWidget* UCatRunWidget::Spacer(float Height)
@@ -178,6 +248,24 @@ void UCatRunWidget::BuildTree()
 	UOverlay* RootOverlay = WidgetTree->ConstructWidget<UOverlay>();
 	WidgetTree->RootWidget = RootOverlay;
 
+	// Spruehnebel der Spraydose: ganz unten ueber die volle Breite (unter allen Bedienelementen)
+	SprayOverlay = WidgetTree->ConstructWidget<UImage>();
+	if (UTexture2D* Tex = LoadObject<UTexture2D>(nullptr, TEXT("/Game/UI/T_Icon_SprayOverlay.T_Icon_SprayOverlay"), nullptr, LOAD_NoWarn | LOAD_Quiet))
+	{
+		SprayOverlay->SetBrushFromTexture(Tex, false);
+	}
+	SprayOverlay->SetVisibility(ESlateVisibility::Collapsed);
+	{
+		USizeBox* OverlayBox = WidgetTree->ConstructWidget<USizeBox>();
+		OverlayBox->SetHeightOverride(760.f);
+		OverlayBox->AddChild(SprayOverlay);
+		if (UOverlaySlot* S = RootOverlay->AddChildToOverlay(OverlayBox))
+		{
+			S->SetHorizontalAlignment(HAlign_Fill);
+			S->SetVerticalAlignment(VAlign_Bottom);
+		}
+		OverlayBox->SetVisibility(ESlateVisibility::HitTestInvisible);
+	}
 	Dim = WidgetTree->ConstructWidget<UBorder>();
 	Dim->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.45f));
 	Dim->SetVisibility(ESlateVisibility::HitTestInvisible);
@@ -221,29 +309,22 @@ void UCatRunWidget::BuildTree()
 		AddRow(Box, FillSpacer(), true);
 		MenuRecord = MakeText(TEXT("REKORD  0"), 40, White);
 		AddRow(Box, MenuRecord);
-		MenuBest = MakeText(TEXT("TUTORIAL  -"), 30, Gray, false);
-		AddRow(Box, MenuBest);
 		MenuCoins = MakeText(TEXT("MÜNZEN  0"), 30, Gray, false);
 		AddRow(Box, MenuCoins);
 		AddRow(Box, Spacer(30.f));
 		UButton* Endless = nullptr;
 		UTextBlock* EndlessLabel = nullptr;
-		AddRow(Box, MakeButton(TEXT("ENDLOS"), 620.f, 160.f, 62, true, Endless, EndlessLabel));
+		AddRow(Box, MakeButton(TEXT("SPIELEN"), 620.f, 160.f, 62, true, Endless, EndlessLabel));
 		Endless->OnClicked.AddDynamic(this, &UCatRunWidget::HandleEndless);
 		AddRow(Box, Spacer(22.f));
-		// Tutorial und Shop nebeneinander
-		UHorizontalBox* Second = WidgetTree->ConstructWidget<UHorizontalBox>();
-		UButton* Tut = nullptr;
-		UTextBlock* TutLabel = nullptr;
 		UButton* Shop = nullptr;
 		UTextBlock* ShopLabel = nullptr;
-		Second->AddChildToHorizontalBox(MakeButton(TEXT("TUTORIAL"), 300.f, 110.f, 36, false, Tut, TutLabel));
-		Second->AddChildToHorizontalBox(Spacer(1.f))->SetPadding(FMargin(10.f, 0.f));
-		Second->AddChildToHorizontalBox(MakeButton(TEXT("SHOP"), 300.f, 110.f, 36, false, Shop, ShopLabel));
-		Tut->OnClicked.AddDynamic(this, &UCatRunWidget::HandleTutorial);
+		AddRow(Box, MakeButton(TEXT("SHOP"), 620.f, 120.f, 40, false, Shop, ShopLabel));
 		Shop->OnClicked.AddDynamic(this, &UCatRunWidget::HandleShop);
-		AddRow(Box, Second);
-		AddRow(Box, Spacer(34.f));
+		AddRow(Box, Spacer(26.f));
+		AddRow(Box, MakeVolumeRow(TEXT("MUSIK"), true));
+		AddRow(Box, MakeVolumeRow(TEXT("SOUND"), false));
+		AddRow(Box, Spacer(20.f));
 		UHorizontalBox* Opts = WidgetTree->ConstructWidget<UHorizontalBox>();
 		UButton* Q = nullptr;
 		UButton* St = nullptr;
@@ -442,7 +523,7 @@ void UCatRunWidget::BuildTree()
 		Cell.PressedPadding = FMargin(0.f);
 		for (int32 I = 0; I < 3; ++I)
 		{
-			UButton* Btn = WidgetTree->ConstructWidget<UButton>();
+			UButton* Btn = WidgetTree->ConstructWidget<UButton>(); NoFocus(Btn);
 			Btn->SetStyle(Cell);
 			Btn->SetClickMethod(EButtonClickMethod::MouseDown);
 			Btn->SetTouchMethod(EButtonTouchMethod::PreciseTap);
@@ -507,6 +588,9 @@ void UCatRunWidget::BuildTree()
 		Resume->OnClicked.AddDynamic(this, &UCatRunWidget::HandleResume);
 		Shop->OnClicked.AddDynamic(this, &UCatRunWidget::HandleShop);
 		Quit->OnClicked.AddDynamic(this, &UCatRunWidget::HandleQuitRun);
+		AddRow(Box, Spacer(40.f));
+		AddRow(Box, MakeVolumeRow(TEXT("MUSIK"), true));
+		AddRow(Box, MakeVolumeRow(TEXT("SOUND"), false));
 		AddRow(Box, FillSpacer(), true);
 		PausePage = Box;
 		AddPage(Box, HAlign_Fill, VAlign_Fill, FMargin(40.f, 0.f));
@@ -639,8 +723,7 @@ void UCatRunWidget::ShowShop(int32 Coins, const TArray<FShopRow>& Rows)
 void UCatRunWidget::ShowMenu(float BestTime, int32 HighScore, bool bEndlessLast, const FString& InQualityLabel, bool bStatsOn, int32 TotalCoins)
 {
 	MenuCoins->SetText(FText::FromString(FString::Printf(TEXT("MÜNZEN  %d"), TotalCoins)));
-	MenuRecord->SetText(FText::FromString(FString::Printf(TEXT("ENDLOS-REKORD  %d"), HighScore)));
-	MenuBest->SetText(FText::FromString(BestTime > 0.f ? FString::Printf(TEXT("TUTORIAL-BESTZEIT  %s"), *FormatTime(BestTime)) : TEXT("TUTORIAL NOCH NICHT GESCHAFFT")));
+	MenuRecord->SetText(FText::FromString(FString::Printf(TEXT("REKORD  %d"), HighScore)));
 	QualityLabel->SetText(FText::FromString(FString::Printf(TEXT("GRAFIK: %s"), *InQualityLabel)));
 	StatsLabel->SetText(FText::FromString(bStatsOn ? TEXT("LEISTUNG: AN") : TEXT("LEISTUNG: AUS")));
 	Dim->SetVisibility(ESlateVisibility::HitTestInvisible);
@@ -803,14 +886,16 @@ void UCatRunWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 }
 
 void UCatRunWidget::HandleStart() { if (Game.IsValid()) Game->RequestStart(); }
-void UCatRunWidget::HandleRestart() { if (Game.IsValid()) Game->RequestStart(); }
+void UCatRunWidget::HandleRestart() { if (Game.IsValid()) { Game->RequestStart(); Game->AfterUiTap(); } }
 void UCatRunWidget::HandleMenu() { if (Game.IsValid()) Game->RequestMenu(); }
 void UCatRunWidget::HandleQuality() { if (Game.IsValid()) Game->CycleQuality(); }
 void UCatRunWidget::HandleStats() { if (Game.IsValid()) Game->ToggleStats(); }
 void UCatRunWidget::HandleShop() { if (Game.IsValid()) Game->RequestShop(); }
 void UCatRunWidget::HandleShopBack() { if (Game.IsValid()) Game->RequestShopBack(); }
 void UCatRunWidget::HandlePause() { if (Game.IsValid()) Game->RequestPause(); }
-void UCatRunWidget::HandleResume() { if (Game.IsValid()) Game->RequestResume(); }
+void UCatRunWidget::HandleMusicVolume(float Value) { if (Game.IsValid() && !bSyncingSliders) Game->SetVolume(true, Value); }
+void UCatRunWidget::HandleSfxVolume(float Value) { if (Game.IsValid() && !bSyncingSliders) Game->SetVolume(false, Value); }
+void UCatRunWidget::HandleResume() { if (Game.IsValid()) { Game->RequestResume(); Game->AfterUiTap(); } }
 void UCatRunWidget::HandleQuitRun() { if (Game.IsValid()) Game->RequestQuitRun(); }
 void UCatRunWidget::HandleBuy0() { if (Game.IsValid()) Game->RequestBuy(0); }
 void UCatRunWidget::HandleBuy1() { if (Game.IsValid()) Game->RequestBuy(1); }
@@ -818,8 +903,7 @@ void UCatRunWidget::HandleBuy2() { if (Game.IsValid()) Game->RequestBuy(2); }
 void UCatRunWidget::HandleBuy3() { if (Game.IsValid()) Game->RequestBuy(3); }
 void UCatRunWidget::HandleBuy4() { if (Game.IsValid()) Game->RequestBuy(4); }
 void UCatRunWidget::HandleBuy5() { if (Game.IsValid()) Game->RequestBuy(5); }
-void UCatRunWidget::HandleItem0() { if (Game.IsValid()) Game->RequestUseItem(0); }
-void UCatRunWidget::HandleItem1() { if (Game.IsValid()) Game->RequestUseItem(1); }
-void UCatRunWidget::HandleItem2() { if (Game.IsValid()) Game->RequestUseItem(2); }
-void UCatRunWidget::HandleEndless() { if (Game.IsValid()) Game->RequestStartMode(ERunMode::Endless); }
-void UCatRunWidget::HandleTutorial() { if (Game.IsValid()) Game->RequestStartMode(ERunMode::Tutorial); }
+void UCatRunWidget::HandleItem0() { if (Game.IsValid()) { Game->RequestUseItem(0); Game->AfterUiTap(); } }
+void UCatRunWidget::HandleItem1() { if (Game.IsValid()) { Game->RequestUseItem(1); Game->AfterUiTap(); } }
+void UCatRunWidget::HandleItem2() { if (Game.IsValid()) { Game->RequestUseItem(2); Game->AfterUiTap(); } }
+void UCatRunWidget::HandleEndless() { if (Game.IsValid()) { Game->RequestStartMode(ERunMode::Endless); Game->AfterUiTap(); } }

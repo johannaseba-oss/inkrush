@@ -109,6 +109,8 @@ public:
 	/** Treffer ueberlebt (Leben verloren): Stolpern + kurze Unverwundbarkeit mit Blinken. */
 	void Stumble(float InvulnSeconds);
 	bool IsInvulnerable() const { return InvulnTime > 0.f; }
+	/** Unverwundbar fuer mindestens Seconds (z. B. nach der Landung aus der Luft-Ebene). */
+	void GrantInvulnerability(float Seconds) { InvulnTime = FMath::Max(InvulnTime, Seconds); }
 	/** Kurzer Aufblitz-Effekt, wenn ein Buff einen Treffer abgefangen hat. */
 	void OnHitAbsorbed();
 	/** 0..1: weisses Aufleuchten (Unbesiegbarkeit). */
@@ -130,7 +132,7 @@ public:
 	bool bFlyInvulnerable = false;
 	bool bDoubleJump = false;
 
-	/** Tintenwolke: schwebt in Hoehe (ueber dem Untergrund), bis StopFly; danach normal landen. */
+	/** Spraydose: steigt auf die Luft-Ebene (Height = Hoehe ueber der Strecke), bis StopFly; danach normal landen. */
 	void StartFly(float Height);
 	void StopFly();
 	bool IsFlying() const { return bFlying; }

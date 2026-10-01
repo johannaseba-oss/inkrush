@@ -19,6 +19,8 @@ public:
 	UCatBuff* AddBuff(TSubclassOf<UCatBuff> BuffClass);
 	/** Faengt ein aktiver Buff die Kollision ab? */
 	bool TryAbsorb(EHazardKind Kind) const;
+	/** Ist ein Buff dieser Klasse gerade aktiv? (z. B. Fluch der Gegner-Wuerfel) */
+	bool HasBuff(TSubclassOf<UCatBuff> BuffClass) const;
 	void StepBuffs(float DeltaTime);
 	void ClearAll();
 

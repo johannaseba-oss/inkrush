@@ -51,6 +51,13 @@ public:
 	UPROPERTY()
 	int32 UpgStartBombs = 0;
 
+	/** Einstellungen: Lautstaerke Musik / Soundeffekte (0..1) */
+	UPROPERTY()
+	float MusicVolume = 0.8f;
+
+	UPROPERTY()
+	float SfxVolume = 0.8f;
+
 	/** Shop: Stufen der Bomben-Reichweite (je +6 m) */
 	UPROPERTY()
 	int32 UpgBombRange = 0;

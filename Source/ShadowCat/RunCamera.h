@@ -48,6 +48,8 @@ public:
 	void SetMenuMode(bool bMenu, bool bInstant);
 	void StepCamera(float DeltaTime, const FVector& CatLoc, const FVector& CatForward);
 	void AddShake(float Amount) { Shake = FMath::Max(Shake, Amount); }
+	/** Bild horizontal spiegeln (Fluch): 0 = normal, 1 = gespiegelt (PP_Mirror) */
+	void SetMirror(float Amount);
 	UCameraComponent* GetCamera() const { return Camera; }
 
 private:
@@ -58,6 +60,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UCameraComponent> Camera;
+
+	UPROPERTY(Transient)
+	TObjectPtr<class UMaterialInstanceDynamic> MirrorMat;
 
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UStaticMeshComponent> Moon;

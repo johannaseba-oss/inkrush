@@ -3,6 +3,8 @@
 #include "CatRunWidget.h"
 #include "Engine/World.h"
 #include "InputCoreTypes.h"
+#include "GameFramework/PlayerInput.h"
+#include "Framework/Application/SlateApplication.h"
 
 ACatRunPlayerController::ACatRunPlayerController()
 {
@@ -33,6 +35,24 @@ void ACatRunPlayerController::BeginPlay()
 	if (ACatRunGameMode* GM = GetWorld()->GetAuthGameMode<ACatRunGameMode>())
 	{
 		GM->RegisterController(this);
+	}
+}
+
+void ACatRunPlayerController::ResetInputAfterUi()
+{
+	bTouchDown = false;
+	bSwipeUsed = false;
+	TouchTime = 0.f;
+	if (PlayerInput)
+	{
+		for (FVector& T : PlayerInput->Touches)
+		{
+			T = FVector::ZeroVector;
+		}
+	}
+	if (FSlateApplication::IsInitialized())
+	{
+		FSlateApplication::Get().SetAllUserFocusToGameViewport();
 	}
 }
 

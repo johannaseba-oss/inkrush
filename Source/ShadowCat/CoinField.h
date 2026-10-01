@@ -31,6 +31,8 @@ public:
 	bool AddCoin(const FVector& Ground, int32 Lane, float Lat, float A);
 	/** Muenzen im Bereich A0..A1 auf den Fahrbahnen in LaneMask entfernen (Tinte des Riesen, Salve). */
 	void RemoveRange(float A0, float A1, int32 LaneMask = -1);
+	/** Alle schwebenden Muenzen oberhalb von Z entfernen (Luft-Ebene der Spraydose nach dem Flug). */
+	void RemoveAbove(float Z);
 	/** Drehen/Schweben, Einsammeln pruefen (nur bei bCollect). Liefert die Anzahl neu eingesammelter Muenzen. */
 	int32 StepCoins(float DeltaTime, float CatA, float CatLat, float FeetZ, bool bCollect);
 	int32 NumLive() const;
@@ -60,5 +62,5 @@ private:
 	TArray<FCoin> Coins;
 	float Time = 0.f;
 	bool bBuilt = false;
-	static constexpr int32 Capacity = 72;
+	static constexpr int32 Capacity = 180;
 };

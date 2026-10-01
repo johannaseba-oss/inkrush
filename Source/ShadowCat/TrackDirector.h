@@ -55,15 +55,11 @@ class SHADOWCAT_API ATrackDirector : public AActor
 public:
 	ATrackDirector();
 
-	/** Tutorial: Rundkurs mit 3 x 3 Fahrbahnen. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level")
-	FCircuitLayout TutorialLayout;
-
 	/** Endlos-Modus: gerade Strecke mit 5 Fahrbahnen. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level")
 	FCircuitLayout EndlessLayout;
 
-	/** Aktives Layout (Kopie von Tutorial- oder Endlos-Layout). */
+	/** Aktives Layout (Kopie des Endlos-Layouts). */
 	FCircuitLayout Layout;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Level")
@@ -109,10 +105,10 @@ public:
 
 	/** Endlos: Gelaende (Rampen mit Plateau, Erhoehungen) auf 1-3 Fahrbahnen - ab so vielen Metern, Abstand (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Parkour")
-	float TerrainStartMeters = 70.f;
+	float TerrainStartMeters = 30.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Parkour")
-	FVector2D TerrainSpacing = FVector2D(3500.f, 8000.f);
+	FVector2D TerrainSpacing = FVector2D(2500.f, 5000.f);
 
 	/** Schluchten mit Mittel-Insel: ab so vielen Metern, Abstand (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Parkour")
@@ -200,6 +196,15 @@ public:
 	int32 BombBlast(float Range);
 	/** Tintenwolke: Kleckse hinter der Katze auf allen Fahrbahnen des Kurses (fortlaufend aufrufen). */
 	void InkSmearTrail(int32 Circuit, float CatA);
+	/** Spraydose: Flug beginnt (Muenzreihen in der Luft-Ebene, Spruehgeraeusch) bzw. endet (Reste entfernen). */
+	void OnSprayFlight(bool bStart, float Duration);
+	/** Hoehe der Luft-Ebene (Fuesse der Katze) */
+	float AirLevelZ = 620.f;
+	/** Abschnitt nur mit Zuegen (sonst Parkour) und wo der naechste Wechsel kommt */
+	bool bTrainSection = false;
+	/** Tempo-Faktor durch den Fluch "doppeltes Tempo" */
+	float SpeedCurse = 1.f;
+	float NextSectionA = 0.f;
 
 	/** Pfotenabdruecke: Abstand zwischen zwei Abdruecken, so weit hinter der Katze erscheinen sie, Groesse (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spur")
@@ -335,7 +340,7 @@ private:
 	float NextCoinA = 0.f;
 	float NextBoxA = 0.f;
 	float Density = 1.f;
-	ERunMode Mode = ERunMode::Tutorial;
+	ERunMode Mode = ERunMode::Endless;
 
 	FRunPlanner Planner;
 	FRandomStream Rng;

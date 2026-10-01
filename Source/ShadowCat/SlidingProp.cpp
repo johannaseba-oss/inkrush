@@ -1,6 +1,7 @@
 #include "SlidingProp.h"
 #include "RunTypes.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/Texture2D.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #if WITH_EDITOR
@@ -35,11 +36,45 @@ void ASlidingProp::Setup(UTexture2D* Tex, float InHeight, float CollisionFrac, f
 	{
 		Sprite = RunAssets::AddShape(this, Root, TEXT("Plane"), FVector::ZeroVector, FVector(1.f), FRotator(0.f, 90.f, 90.f), Mat);
 	}
+	Sprite->SetVisibility(true);
+	if (Model)
+	{
+		Model->SetVisibility(false);
+	}
 	const float Aspect = Tex->GetSizeY() > 0 ? float(Tex->GetSizeX()) / float(Tex->GetSizeY()) : 1.f;
 	const float Width = InHeight * Aspect;
 	HalfWidth = Width * 0.5f * CollisionFrac;
 	Sprite->SetRelativeLocation(FVector(0.f, 0.f, InHeight * 0.5f));
 	Sprite->SetRelativeScale3D(FVector(Flip * Width / 100.f, InHeight / 100.f, 1.f));
+}
+
+void ASlidingProp::SetupModel(UStaticMesh* Mesh, float Len, float Depth, float InHeight)
+{
+	if (!Mesh)
+	{
+		return;
+	}
+	if (Sprite)
+	{
+		Sprite->SetVisibility(false);
+	}
+	if (!Model)
+	{
+		Model = NewObject<UStaticMeshComponent>(this);
+		Model->SetupAttachment(Root);
+		Model->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Model->SetCastShadow(false);
+		Model->RegisterComponent();
+	}
+	Model->SetStaticMesh(Mesh);
+	Model->SetVisibility(true);
+	// Modell: Ursprung unten mittig, Laenge entlang X -> um 90 Grad gedreht, faehrt quer ueber die Gleise
+	const FVector Size = Mesh->GetBoundingBox().GetSize();
+	Model->SetRelativeRotation(FRotator(0.f, 90.f, 0.f));
+	Model->SetRelativeScale3D(FVector(Len / FMath::Max(1.f, Size.X), Depth / FMath::Max(1.f, Size.Y), InHeight / FMath::Max(1.f, Size.Z)));
+	HalfWidth = Len * 0.5f * 0.9f;
+	HalfLength = Depth * 0.5f;
+	Height = InHeight;
 }
 
 void ASlidingProp::Launch(const FVector& Ground, float InA, float InLatMin, float InLatMax, float InSlideSpeed, float Phase)
@@ -62,6 +97,7 @@ void ASlidingProp::LaunchCross(const FVector& Ground, float InA, float FromLat, 
 	A = InA;
 	Lane = 0;
 	bOneWay = true;
+	bHonked = false;
 	CrossDir = ToLat >= FromLat ? 1.f : -1.f;
 	LatMin = FromLat;
 	LatMax = ToLat;

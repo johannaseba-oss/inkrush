@@ -29,6 +29,18 @@ UCatBuff* UBuffComponent::AddBuff(TSubclassOf<UCatBuff> BuffClass)
 	return Buff;
 }
 
+bool UBuffComponent::HasBuff(TSubclassOf<UCatBuff> BuffClass) const
+{
+	for (const UCatBuff* B : Active)
+	{
+		if (B && B->GetClass() == BuffClass)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 bool UBuffComponent::TryAbsorb(EHazardKind Kind) const
 {
 	for (const UCatBuff* B : Active)

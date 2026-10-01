@@ -62,20 +62,43 @@ void AObstacle::Build(EObstacleType InType)
 	switch (Type)
 	{
 	case EObstacleType::Fence:
-		// Zaun (Bild 963x517): springen oder ausweichen
+	{
+		// Absperrung (3D, schlichte Formen): helle Latte mit dunklen Schraegstreifen auf zwei Pfosten -> drueberspringen
 		HalfLength = 15.f;
-		HalfWidth = 58.f;
-		Height = 76.f;
-		AddSprite(TEXT("T_Sprite_Zaun"), 142.f, 76.f);
+		HalfWidth = 60.f;
+		Height = 80.f;
+		UMaterialInterface* Light = RunAssets::Mono(0.92f, 0.75f);
+		UMaterialInterface* Dark = RunAssets::Mono(0.03f, 0.f);
+		Add(TEXT("Cube"), FVector(0.f, 0.f, 62.f), FVector(0.1f, 1.3f, 0.3f), FRotator::ZeroRotator, Light);
+		for (int32 I = -2; I <= 2; ++I)
+		{
+			Add(TEXT("Cube"), FVector(-6.f, I * 26.f, 62.f), FVector(0.02f, 0.09f, 0.34f), FRotator(0.f, 0.f, 35.f), Dark);
+		}
+		Add(TEXT("Cube"), FVector(0.f, 0.f, 30.f), FVector(0.08f, 1.2f, 0.1f), FRotator::ZeroRotator, Light);
+		for (const float Y : { -56.f, 56.f })
+		{
+			Add(TEXT("Cube"), FVector(0.f, Y, 40.f), FVector(0.12f, 0.1f, 0.8f), FRotator::ZeroRotator, Dark);
+			Add(TEXT("Cube"), FVector(0.f, Y, 3.f), FVector(0.4f, 0.16f, 0.06f), FRotator::ZeroRotator, Dark);
+		}
 		break;
+	}
 
 	case EObstacleType::Crate:
-		// Kiste (Bild 733x577): springen oder ausweichen
+	{
+		// Kiste aus den Natur-Bildern (Holzkiste oder Karton, zufaellig) -> drueberspringen oder ausweichen
 		HalfLength = 30.f;
 		HalfWidth = 58.f;
 		Height = 108.f;
-		AddSprite(TEXT("T_Sprite_Crate"), 138.f, 108.f);
+		if (FMath::RandBool())
+		{
+			AddSprite(TEXT("T_Sprite_Crate"), 138.f, 108.f);
+		}
+		else
+		{
+			AddSprite(TEXT("T_Sprite_CardboardBox"), 108.f * 639.f / 703.f, 108.f);
+		}
 		break;
+	}
 
 	case EObstacleType::Lamp:
 		// Laterne (Bild 256x925): zu hoch zum Springen -> ausweichen

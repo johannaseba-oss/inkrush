@@ -94,11 +94,6 @@ void ACatRunGameMode::SetupWorld()
 		Director->Difficulty.EnemyChanceStart = EnemyChance;
 		Director->Difficulty.EnemyChanceMax = EnemyChance;
 	}
-	if (Scenario == TEXT("bombgap"))
-	{
-		Director->bHazards = false;
-		Director->StartLane = 2;
-	}
 	if (Scenario == TEXT("coffin") || Scenario == TEXT("beam") || Scenario == TEXT("pit"))
 	{
 		Director->bHazards = false;
@@ -128,17 +123,13 @@ void ACatRunGameMode::SetupWorld()
 	Score->PointsPerMeter = 0.f;
 	Score->bReadOnly = bAutoStart || bAutopilot || !Scenario.IsEmpty() || Shots.Num() > 0 || QuitAt > 0.f;
 	Score->Load();
-	// Modus: Kommandozeile > zuletzt gespielt > Endlos
-	Mode = Score->GetData()->LastMode == 0 ? ERunMode::Tutorial : ERunMode::Endless;
-	if (ModeArg == TEXT("tutorial") || Scenario == TEXT("bombgap"))
-	{
-		Mode = ERunMode::Tutorial;
-	}
-	else if (ModeArg == TEXT("endless"))
-	{
-		Mode = ERunMode::Endless;
-	}
+	// es gibt nur noch den Endlos-Modus (das Tutorial wurde entfernt)
+	Mode = ERunMode::Endless;
 	ApplyQuality(Score->GetData()->Quality, false);
+	if (Audio)
+	{
+		Audio->SetUserVolumes(Score->GetData()->MusicVolume, Score->GetData()->SfxVolume);
+	}
 	Director->SetMode(Mode);
 
 	UE_LOG(LogShadowCat, Log, TEXT("Welt aufgebaut: Katze %s (%s), Director %s"), *Cat->GetClass()->GetName(), Cat->UsesPlaceholder() ? TEXT("Platzhalter") : TEXT("Modell"), *Director->GetClass()->GetName());
@@ -168,6 +159,7 @@ void ACatRunGameMode::EnterMenu()
 	if (Widget)
 	{
 		Widget->ShowMenu(Score->GetBestTime(), Score->GetHighScore(), Mode == ERunMode::Endless, QualityName(), Score->GetData()->bShowStats, Score->GetTotalCoins());
+		Widget->SetVolumeSliders(Score->GetData()->MusicVolume, Score->GetData()->SfxVolume);
 	}
 }
 
@@ -183,6 +175,8 @@ void ACatRunGameMode::BeginRun()
 	ApplyUpgrades();
 	RunCoins = 0;
 	RunCoinsBanked = 0;
+	SprayFade = 0.f;
+	SprayHold = 0.f;
 	++RunCount;
 	Score->BeginRun();
 	Cat->BeginRun();
@@ -196,23 +190,6 @@ void ACatRunGameMode::BeginRun()
 		Widget->ShowRunHud(Mode == ERunMode::Endless);
 	}
 	UE_LOG(LogShadowCat, Log, TEXT("Lauf %d gestartet"), RunCount);
-	if (Scenario == TEXT("bombgap"))
-	{
-		ScenarioStep = 0;
-		// alles ausser Kurs 1 / rechte Fahrbahn vorfaerben; die faerbt die Katze selbst
-		Director->GetCanvas()->DebugPaintAll(2);
-		if (UItemSlotComponent* Slot = Cat->GetSlot())
-		{
-			Slot->ForcedResult = 1; // Tintenbombe
-		}
-		const FCircuitLayout& L = Director->Layout;
-		const float K = (L.BaseRadius + L.LaneLat(2)) / L.BaseRadius;
-		// Luecke mitten auf der oberen Geraden (halbe Gerade + Kurve + halbe Gerade voraus)
-		ScenarioGapArc = L.StraightLength + PI * L.BaseRadius * K;
-		Director->DebugPlaceBox(ScenarioGapArc + 1600.f, 2);
-		UE_LOG(LogShadowCat, Log, TEXT("SZENARIO bombgap: Fahrbahn K1-R %d/%d, Luecke bei %.0f m, Rundenlaenge %.0f m"),
-			Director->GetCanvas()->CountPainted(2), Director->GetCanvas()->CountSections(2), ScenarioGapArc / 100.f, L.LaneLength(2) / 100.f);
-	}
 }
 
 void ACatRunGameMode::RequestStart()
@@ -245,8 +222,6 @@ void ACatRunGameMode::RequestStartMode(ERunMode InMode)
 		RunCamera->SetMenuMode(true, true);
 		RunCamera->StepCamera(0.f, Cat->GetActorLocation(), Cat->GetForward());
 	}
-	Score->GetData()->LastMode = Mode == ERunMode::Tutorial ? 0 : 1;
-	Score->Save();
 	BeginRun();
 }
 
@@ -280,8 +255,8 @@ TArray<FShopRow> ACatRunGameMode::BuildShopRows(TArray<int32>* OutPrices) const
 	};
 	// Preis fuer ein Leben verdoppelt sich mit jedem gekauften Leben
 	Add(TEXT("+1 LEBEN"), FString::Printf(TEXT("jetzt %d Leben"), MaxLives + D->UpgExtraLives), 150 << D->UpgExtraLives, D->UpgExtraLives >= 6);
-	Add(TEXT("WOLKE +1 S"), FString::Printf(TEXT("Flug %d s"), 4 + D->UpgFlyTime), LevelPrice(120, 1.8f, D->UpgFlyTime), D->UpgFlyTime >= 5);
-	Add(TEXT("FLUG UNVERWUNDBAR"), TEXT("auf der Wolke kann nichts treffen"), 450, D->bUpgFlyInvulnerable);
+	Add(TEXT("SPRAYDOSE +1 S"), FString::Printf(TEXT("Flug %d s"), 5 + D->UpgFlyTime), LevelPrice(120, 1.8f, D->UpgFlyTime), D->UpgFlyTime >= 5);
+	Add(TEXT("SICHERE LANDUNG"), TEXT("nach dem Flug 3 s unverwundbar"), 450, D->bUpgFlyInvulnerable);
 	Add(TEXT("DOPPELSPRUNG"), TEXT("in der Luft noch einmal springen"), 600, D->bUpgDoubleJump);
 	Add(TEXT("BOMBEN-REICHWEITE"), FString::Printf(TEXT("jetzt %d m nach vorn"), 18 + 6 * D->UpgBombRange), LevelPrice(150, 1.8f, D->UpgBombRange), D->UpgBombRange >= 4);
 	Add(TEXT("START-BOMBE"), bPaused ? FString(TEXT("sofort +1 Bombe, danach jeder Start")) : FString::Printf(TEXT("mit %d Bomben starten"), D->UpgStartBombs), LevelPrice(200, 2.f, D->UpgStartBombs), D->UpgStartBombs >= 3);
@@ -328,6 +303,11 @@ void ACatRunGameMode::RequestPause()
 	if (Widget)
 	{
 		Widget->ShowPause(WalletCoins());
+		Widget->SetVolumeSliders(Score->GetData()->MusicVolume, Score->GetData()->SfxVolume);
+	}
+	if (Audio)
+	{
+		Audio->SetTrainProximity(0.f);
 	}
 }
 
@@ -368,6 +348,14 @@ void ACatRunGameMode::RequestQuitRun()
 	Cat->GetBuffs()->ClearAll();
 	Cat->GetSlot()->Clear();
 	EnterGameOver();
+}
+
+void ACatRunGameMode::AfterUiTap()
+{
+	if (Controller)
+	{
+		Controller->ResetInputAfterUi();
+	}
 }
 
 void ACatRunGameMode::RequestShopBack()
@@ -479,6 +467,11 @@ void ACatRunGameMode::RequestLaneShift(int32 Dir)
 	if (Phase != ERunPhase::Running || !Cat)
 	{
 		return;
+	}
+	// Fluch "Steuerung verdreht": links und rechts vertauscht
+	if (Cat->GetBuffs()->HasBuff(UBuff_CurseControls::StaticClass()))
+	{
+		Dir = -Dir;
 	}
 	const int32 R = Cat->RequestLaneShift(Dir, Director->CanChangeCircuit());
 	if (R != 0 && Audio)
@@ -607,6 +600,18 @@ bool ACatRunGameMode::OnCatHit(const FString& Reason)
 	}
 	--Lives;
 	RunCamera->AddShake(Lives > 0 ? 0.6f : 1.f);
+	if (Audio)
+	{
+		// letztes Leben: Game-Over-Klang statt Treffer
+		if (Lives > 0)
+		{
+			Audio->PlayDamage();
+		}
+		else
+		{
+			Audio->PlayGameOver();
+		}
+	}
 	UE_LOG(LogShadowCat, Log, TEXT("%sTreffer: %s | Leben %d/%d"), bAutopilot ? TEXT("AUTOPILOT ") : TEXT(""), *Reason, Lives, RunMaxLives);
 	if (Lives > 0)
 	{
@@ -724,6 +729,63 @@ void ACatRunGameMode::PlayJump()
 	}
 }
 
+void ACatRunGameMode::PlayTrain()
+{
+	if (Audio)
+	{
+		Audio->PlayTrain();
+	}
+}
+
+void ACatRunGameMode::SetTrainProximity(float Near)
+{
+	if (Audio)
+	{
+		Audio->SetTrainProximity(bPaused ? 0.f : Near);
+	}
+}
+
+void ACatRunGameMode::SetVolume(bool bMusic, float Value)
+{
+	UCatRunSaveGame* D = Score->GetData();
+	(bMusic ? D->MusicVolume : D->SfxVolume) = FMath::Clamp(Value, 0.f, 1.f);
+	if (Audio)
+	{
+		Audio->SetUserVolumes(D->MusicVolume, D->SfxVolume);
+	}
+	Score->Save();
+}
+
+void ACatRunGameMode::SetSpraySound(bool bOn)
+{
+	if (Audio)
+	{
+		Audio->SetSpray(bOn);
+	}
+}
+
+void ACatRunGameMode::OnCurse(const FText& Name)
+{
+	UE_LOG(LogShadowCat, Log, TEXT("Fluch: %s"), *Name.ToString());
+	RunCamera->AddShake(0.4f);
+	if (Widget)
+	{
+		Widget->FlashMessage(FString::Printf(TEXT("FLUCH: %s"), *Name.ToString()));
+	}
+	if (Audio)
+	{
+		Audio->PlayDamage();
+	}
+}
+
+void ACatRunGameMode::PlayCarHonk()
+{
+	if (Audio)
+	{
+		Audio->PlaySfx(TEXT("Car_honk"), 0.75f, 0.05f);
+	}
+}
+
 void ACatRunGameMode::PlayBomb()
 {
 	if (Audio)
@@ -814,6 +876,30 @@ void ACatRunGameMode::Tick(float DeltaSeconds)
 		Cat->StepIdle(Dt);
 	}
 
+	// Fluch "Bild gespiegelt": schnell umklappen (und am Ende zurueck)
+	{
+		const bool bMirror = Phase == ERunPhase::Running && Cat->GetBuffs()->HasBuff(UBuff_CurseMirror::StaticClass());
+		MirrorAmount = FMath::FInterpConstantTo(MirrorAmount, bMirror ? 1.f : 0.f, Dt, 4.f);
+		RunCamera->SetMirror(FMath::SmoothStep(0.f, 1.f, MirrorAmount));
+	}
+	// Spraydose: schwarzer Spruehnebel unten im Bild, solange geflogen wird, danach noch 2 s, dann ausblenden
+	if (Phase == ERunPhase::Running && Cat->IsFlying())
+	{
+		SprayFade = FMath::Min(1.f, SprayFade + Dt * 4.f);
+		SprayHold = 2.f;
+	}
+	else if (SprayHold > 0.f)
+	{
+		SprayHold -= Dt;
+	}
+	else
+	{
+		SprayFade = FMath::Max(0.f, SprayFade - Dt * 1.6f);
+	}
+	if (Widget)
+	{
+		Widget->SetSprayOverlay(Phase == ERunPhase::Menu ? 0.f : SprayFade);
+	}
 	if (Phase == ERunPhase::Running)
 	{
 		RunClock += Dt;
@@ -949,99 +1035,6 @@ void ACatRunGameMode::TickScenario()
 		TickCoffinTest();
 		return;
 	}
-	if (Scenario != TEXT("bombgap") || Phase == ERunPhase::Menu)
-	{
-		return;
-	}
-	const AInkCanvas* C = Director->GetCanvas();
-	const FCircuitLayout& L = Director->Layout;
-	const float D = Cat->GetTravel();
-	const float Lap = L.LaneLength(2);
-	auto Shot = [this](const TCHAR* Name)
-	{
-		if (!ScenarioShotDir.IsEmpty())
-		{
-			FScreenshotRequest::RequestScreenshot(ScenarioShotDir / Name, true, false);
-		}
-	};
-	auto Log = [&](const TCHAR* What)
-	{
-		UE_LOG(LogShadowCat, Log, TEXT("SZENARIO %s | K1-R %d/%d (%.1f%%), gesamt %d/%d, Slot %s, Weg %.0f m"), What,
-			C->CountPainted(2), C->CountSections(2), C->LaneProgress(2) * 100.f, C->GetTotalPainted(), C->GetTotalSections(),
-			*Cat->GetSlot()->GetDisplayName().ToString(), D / 100.f);
-	};
-	switch (ScenarioStep)
-	{
-	case 0:
-		if (D >= ScenarioGapArc - 450.f)
-		{
-			Cat->RequestLaneShift(-1, false);
-			Log(TEXT("Runde 1: weiche absichtlich aus (Luecke beginnt)"));
-			++ScenarioStep;
-		}
-		break;
-	case 1:
-		if (D >= ScenarioGapArc + 250.f)
-		{
-			Cat->RequestLaneShift(1, false);
-			++ScenarioStep;
-		}
-		break;
-	case 2:
-		if (D >= ScenarioGapArc + 900.f)
-		{
-			Log(TEXT("Runde 1: Luecke gelassen"));
-			++ScenarioStep;
-		}
-		break;
-	case 3:
-		if (Cat->GetSlot()->HasItem())
-		{
-			Log(TEXT("Tintenbombe im Slot - wird aufgespart"));
-			++ScenarioStep;
-		}
-		break;
-	case 4:
-		if (D >= Lap + 200.f)
-		{
-			// Runde 2 auf der mittleren Fahrbahn: die Spur faerbt die Luecke NICHT
-			Cat->RequestLaneShift(-1, false);
-			Log(TEXT("Runde 1 beendet, Runde 2 auf der Mitte"));
-			++ScenarioStep;
-		}
-		break;
-	case 5:
-		if (D >= Lap + ScenarioGapArc - 1100.f)
-		{
-			Log(TEXT("Runde 2: Luecke voraus"));
-			Shot(TEXT("scen_gap_ahead.png"));
-			++ScenarioStep;
-		}
-		break;
-	case 6:
-		if (D >= Lap + ScenarioGapArc - 60.f)
-		{
-			Log(TEXT("vor Bombe"));
-			RequestUseItem();
-			Log(TEXT("nach Bombe"));
-			++ScenarioStep;
-		}
-		break;
-	case 7:
-		if (Phase == ERunPhase::Won)
-		{
-			UE_LOG(LogShadowCat, Log, TEXT("SZENARIO ERFOLGREICH: Level nach der letzten Luecke beendet"));
-			++ScenarioStep;
-		}
-		else if (D >= Lap + ScenarioGapArc + 800.f)
-		{
-			Log(TEXT("FEHLER: Level nicht beendet"));
-			++ScenarioStep;
-		}
-		break;
-	default:
-		break;
-	}
 }
 
 void ACatRunGameMode::TickTests(float DeltaTime)
@@ -1081,6 +1074,24 @@ void ACatRunGameMode::TickTests(float DeltaTime)
 			FScreenshotRequest::RequestScreenshot(ShopShot, true, false);
 			ShopShot.Reset();
 		}
+	}
+	// Test: -CatCurseAt=6  Fluch "Bild gespiegelt" (Spiegelung pruefen)
+	static float CurseAt = [] { float V = -1.f; FParse::Value(FCommandLine::Get(), TEXT("CatCurseAt="), V); return V; }();
+	if (CurseAt > 0.f && Phase == ERunPhase::Running && PlayTime > CurseAt)
+	{
+		CurseAt = -1.f;
+		if (UCatBuff* B = Cat->GetBuffs()->AddBuff(UBuff_CurseMirror::StaticClass()))
+		{
+			OnCurse(B->DisplayName);
+		}
+	}
+	// Test: -CatSprayAt=8  Spraydose geben und sofort einsetzen (Flug in die Luft-Ebene)
+	static float SprayAt = [] { float V = -1.f; FParse::Value(FCommandLine::Get(), TEXT("CatSprayAt="), V); return V; }();
+	if (SprayAt > 0.f && Phase == ERunPhase::Running && PlayTime > SprayAt)
+	{
+		SprayAt = -1.f;
+		Cat->GetSlot()->GrantClass(UBuff_SprayPaint::StaticClass(), 1);
+		RequestUseItem(0);
 	}
 	// Test: -CatPauseTest=dir  nach 8 s Pause -> Bild, Shop -> Bild, zurueck, weiter, Bombe -> Bilder (kauft nichts)
 	static FString PauseDir = [] { FString S; FParse::Value(FCommandLine::Get(), TEXT("CatPauseTest="), S, false); return S; }();

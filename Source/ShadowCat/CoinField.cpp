@@ -99,6 +99,19 @@ void ACoinField::RemoveRange(float A0, float A1, int32 LaneMask)
 	}
 }
 
+void ACoinField::RemoveAbove(float Z)
+{
+	for (int32 I = 0; I < Coins.Num(); ++I)
+	{
+		FCoin& C = Coins[I];
+		if (C.bLive && C.Pop < 0.f && C.Base.Z > Z)
+		{
+			C.bLive = false;
+			SetInstance(I, FVector(0.f, 0.f, -5000.f), 0.f, 0.001f);
+		}
+	}
+}
+
 int32 ACoinField::NumLive() const
 {
 	int32 N = 0;
@@ -145,8 +158,9 @@ int32 ACoinField::StepCoins(float DeltaTime, float CatA, float CatLat, float Fee
 		}
 		if (C.Pop < 0.f)
 		{
-			// Katze beruehrt die Muenze (Sprung ueber die Reihe = verpasst)
-			if (bCollect && FMath::Abs(Ahead) < 70.f && FMath::Abs(C.Lat - CatLat) < 60.f && FeetZ < FloatHeight + 35.f)
+			// Katze beruehrt die Muenze (Sprung ueber die Reihe = verpasst); Hoehe: Koerpermitte der Katze nahe der Muenze
+			// (Boden-Muenzen beim Laufen, Luft-Muenzen beim Fliegen mit der Spraydose)
+			if (bCollect && FMath::Abs(Ahead) < 70.f && FMath::Abs(C.Lat - CatLat) < 60.f && FMath::Abs(FeetZ + 40.f - C.Base.Z) < 110.f)
 			{
 				C.Pop = 0.f;
 				++Got;

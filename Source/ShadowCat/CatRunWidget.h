@@ -44,6 +44,10 @@ public:
 	void ShowShop(int32 Coins, const TArray<FShopRow>& Rows);
 	/** Pause-Seite (Weiter, Shop, Lauf beenden) bzw. zurueck zum HUD */
 	void ShowPause(int32 Coins);
+	/** Lautstaerke-Regler (Menue und Pause) auf die gespeicherten Werte setzen */
+	void SetVolumeSliders(float Music, float Sfx);
+	/** Schwarzer Spruehnebel am unteren Bildrand (0..1) */
+	void SetSprayOverlay(float Alpha);
 	void HidePause();
 	void ShowGameOver(int32 Score, int32 Painted, int32 Total, bool bEndless, int32 HighScore, bool bNewRecord, float Meters, int32 Coins);
 	void ShowWin(int32 Score, float Seconds, float BestTime, bool bNewBest);
@@ -76,12 +80,15 @@ private:
 	UFUNCTION() void HandleItem1();
 	UFUNCTION() void HandleItem2();
 	UFUNCTION() void HandleEndless();
-	UFUNCTION() void HandleTutorial();
 	UFUNCTION() void HandleShop();
 	UFUNCTION() void HandleShopBack();
 	UFUNCTION() void HandlePause();
 	UFUNCTION() void HandleResume();
 	UFUNCTION() void HandleQuitRun();
+	UFUNCTION() void HandleMusicVolume(float Value);
+	UFUNCTION() void HandleSfxVolume(float Value);
+	/** Zeile "MUSIK  [----o---]" */
+	UWidget* MakeVolumeRow(const FString& Label, bool bMusic);
 	UFUNCTION() void HandleBuy0();
 	UFUNCTION() void HandleBuy1();
 	UFUNCTION() void HandleBuy2();
@@ -99,6 +106,10 @@ private:
 	UPROPERTY(Transient) TObjectPtr<UWidget> ShopPage;
 	UPROPERTY(Transient) TObjectPtr<UWidget> PausePage;
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> PauseCoins;
+	UPROPERTY(Transient) TObjectPtr<UImage> SprayOverlay;
+	UPROPERTY(Transient) TArray<TObjectPtr<class USlider>> MusicSliders;
+	UPROPERTY(Transient) TArray<TObjectPtr<class USlider>> SfxSliders;
+	bool bSyncingSliders = false;
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> ShopCoins;
 	UPROPERTY(Transient) TArray<TObjectPtr<UWidget>> ShopRows;
 	UPROPERTY(Transient) TArray<TObjectPtr<UTextBlock>> ShopNames;
@@ -106,7 +117,6 @@ private:
 	UPROPERTY(Transient) TArray<TObjectPtr<UTextBlock>> ShopPrices;
 	UPROPERTY(Transient) TArray<TObjectPtr<UButton>> ShopButtons;
 
-	UPROPERTY(Transient) TObjectPtr<UTextBlock> MenuBest;
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> MenuRecord;
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> MenuCoins;
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> HudCoins;

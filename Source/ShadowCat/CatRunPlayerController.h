@@ -28,6 +28,9 @@ public:
 	float SwipeMaxTime = 0.6f;
 
 	UCatRunWidget* GetRunWidget() const { return RunWidget; }
+	/** Nach einem Tipp auf einen Button (Item, Pause): Die Oberflaeche hat Beruehren/Loslassen verschluckt -> Touch-Zustand
+	 *  zuruecksetzen und Tastatur-Fokus zurueck ins Spiel, damit der naechste Wisch/Sprung sofort zaehlt. */
+	void ResetInputAfterUi();
 
 protected:
 	virtual void BeginPlay() override;

@@ -23,8 +23,6 @@ struct FShopRow;
  * Test-Parameter (Kommandozeile):
  *   -CatAutoStart            Lauf sofort starten
  *   -CatAuto                 Autopilot: weicht aus, faerbt ein, wechselt Kurse, setzt Items ein
- *   -CatScenario=bombgap     Test: Luecke lassen, Tintenbombe aufsparen, Luecke in der naechsten Runde schliessen
- *   -CatMode=endless|tutorial Modus beim Start
  *   -CatNoHazards            ohne Hindernisse/Gegner
  *   -CatShot=a.png@3,b.png@8 Screenshots zu Spielzeitpunkten (Sekunden)
  *   -CatWinShot=a.png        Screenshot des Erfolgsbildschirms
@@ -78,6 +76,8 @@ public:
 	void RequestBuy(int32 Index);
 	/** Shop "ZURUECK": in die Pause (waehrend des Laufs) bzw. ins Menue */
 	void RequestShopBack();
+	/** Nach Button-Tipps im Lauf: Eingabe zuruecksetzen (siehe ACatRunPlayerController::ResetInputAfterUi) */
+	void AfterUiTap();
 	/** Pause-Taste oben links: Spiel anhalten, Pause-Seite mit Shop */
 	void RequestPause();
 	void RequestResume();
@@ -110,6 +110,16 @@ public:
 	void PlaySplash(float VolumeScale = 1.f);
 	void PlayBomb();
 	void PlayJump();
+	void PlayCarHonk();
+	/** Gegner-Wuerfel beruehrt: Fluch (Name fuer die Anzeige) */
+	void OnCurse(const FText& Name);
+	void PlayTrain();
+	/** Naechster entgegenkommender Zug (0..1, 1 = ganz nah) -> Lautstaerke des Zuggeraeuschs */
+	void SetTrainProximity(float Near);
+	/** Einstellungen: Lautstaerke Musik bzw. Soundeffekte (0..1), wird gespeichert */
+	void SetVolume(bool bMusic, float Value);
+	/** Spraydose: Spruehgeraeusch an/aus */
+	void SetSpraySound(bool bOn);
 
 	ERunPhase GetPhase() const { return Phase; }
 
@@ -136,6 +146,11 @@ private:
 	/** Guthaben inkl. noch nicht gutgeschriebener Muenzen dieses Laufs. */
 	int32 WalletCoins() const;
 	bool bPaused = false;
+	/** Spruehnebel-Overlay (Spraydose): Deckkraft und Nachlaufzeit */
+	float SprayFade = 0.f;
+	/** Bildspiegelung (Fluch) 0..1 */
+	float MirrorAmount = 0.f;
+	float SprayHold = 0.f;
 	int32 RunCoinsBanked = 0;
 
 	UPROPERTY(Transient) TObjectPtr<ARunnerCat> Cat;

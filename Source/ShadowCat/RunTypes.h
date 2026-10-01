@@ -34,8 +34,6 @@ enum class ERunPhase : uint8
 UENUM(BlueprintType)
 enum class ERunMode : uint8
 {
-	/** Rundkurs mit 9 Fahrbahnen, alles einfaerben. */
-	Tutorial,
 	/** Endlose Gerade mit 5 Fahrbahnen, Riese am Horizont, Score. */
 	Endless
 };

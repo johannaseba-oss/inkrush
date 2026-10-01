@@ -364,9 +364,9 @@ void ARunnerCat::StepVertical(float DeltaTime)
 	JumpBuffer -= DeltaTime;
 	if (bFlying)
 	{
-		// auf der Tintenwolke: weich auf Flughoehe, leichtes Schaukeln
-		const float Target = SupportZ + FlyHeight + 12.f * FMath::Sin(Time * 3.f);
-		JumpZ = FMath::FInterpTo(JumpZ, Target, DeltaTime, 5.f);
+		// Spraydose: zuegig hoch auf die Luft-Ebene (feste Hoehe ueber allem), leichtes Schaukeln
+		const float Target = FMath::Max(SupportZ + 150.f, FlyHeight) + 12.f * FMath::Sin(Time * 3.f);
+		JumpZ = FMath::FInterpTo(JumpZ, Target, DeltaTime, 3.f);
 		VelZ = 0.f;
 		return;
 	}

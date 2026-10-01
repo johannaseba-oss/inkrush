@@ -110,7 +110,7 @@ def import_texture(png, dest, name):
     return path
 
 
-def import_static(fbx, dest, name):
+def import_static(fbx, dest, name, vertex_colors=False):
     task = base_task(fbx, dest, name)
     ui = unreal.FbxImportUI()
     ui.import_mesh = True
@@ -128,6 +128,8 @@ def import_static(fbx, dest, name):
     sd.convert_scene = True
     sd.convert_scene_unit = True
     sd.import_uniform_scale = 1.0
+    if vertex_colors:
+        sd.vertex_color_import_option = unreal.VertexColorImportOption.REPLACE
     task.options = ui
     return run_task(task)
 
@@ -420,31 +422,32 @@ if "materials" in STEPS:
     moon = vec_param(m, "MoonDir", (0.897, -0.345, 0.276, 0), -1100, 200)
     # lokale Lage quer zur Flaeche (Plane: -50..50) und je Seite "offen" (Instanzdaten 0 = -Y, 1 = +Y):
     # offene Seiten gehen nahtlos in die Nachbarflaeche ueber, nur echte Aussenkanten fransen gewellt aus
-    lp = mel.create_material_expression(m, unreal.MaterialExpressionTransformPosition, -900, -300)
-    lp.set_editor_property("transform_source_type", unreal.MaterialPositionTransformSource.TRANSFORMPOSSOURCE_WORLD)
-    lp.set_editor_property("transform_type", unreal.MaterialPositionTransformSource.TRANSFORMPOSSOURCE_LOCAL)
-    mel.connect_material_expressions(wp, "", lp, "")
     o0 = mel.create_material_expression(m, unreal.MaterialExpressionPerInstanceCustomData, -900, -400)
     o0.set_editor_property("data_index", 0)
     o1 = mel.create_material_expression(m, unreal.MaterialExpressionPerInstanceCustomData, -900, -480)
     o1.set_editor_property("data_index", 1)
-    mask = custom(m, "float side = LP.y;\n"
+    cy = mel.create_material_expression(m, unreal.MaterialExpressionPerInstanceCustomData, -900, -560)
+    cy.set_editor_property("data_index", 2)
+    hw = mel.create_material_expression(m, unreal.MaterialExpressionPerInstanceCustomData, -900, -640)
+    hw.set_editor_property("data_index", 3)
+    # Seitenlage aus Welt-Y relativ zur Mitte der Flaeche (Instanzdaten 2/3, gerade Strecke)
+    mask = custom(m, "float side = (WP.y - CY) / max(HW, 1.0) * 50.0;\n"
                      "float open = side < 0.0 ? O0 : O1;\n"
                      "float e = saturate(1.0 - abs(side) / 50.0);\n"
                      "e = open > 0.5 ? 1.0 : e;\n"
                      "float n = 0.5 + 0.22 * sin(WP.x * 0.021 + WP.y * 0.017) + 0.16 * sin(WP.x * 0.057 - WP.y * 0.043) + 0.1 * sin(WP.x * 0.13 + WP.y * 0.09);\n"
                      "return e * 1.6 - n * 0.75;",
-                  ["LP", "WP", "O0", "O1"], -700, -150, unreal.CustomMaterialOutputType.CMOT_FLOAT1)
-    link(lp, mask, "LP"); link(wp, mask, "WP"); link(o0, mask, "O0"); link(o1, mask, "O1")
+                  ["WP", "O0", "O1", "CY", "HW"], -700, -150, unreal.CustomMaterialOutputType.CMOT_FLOAT1)
+    link(wp, mask, "WP"); link(o0, mask, "O0"); link(o1, mask, "O1"); link(cy, mask, "CY"); link(hw, mask, "HW")
     gloss = custom(m, "float2 p = WP.xy;\n"
                       "float3 N = normalize(float3(0.1 * sin(p.x * 0.031 + T * 0.9) + 0.06 * sin(p.y * 0.052 + p.x * 0.013),\n"
                       "                            0.1 * cos(p.y * 0.036 - T * 0.7) + 0.06 * sin(p.x * 0.047), 1.0));\n"
                       "float3 V = normalize(Cam);\n"
                       "float3 R = reflect(-V, N);\n"
                       "float m = saturate(dot(R, normalize(Moon.xyz)));\n"
-                      "float spec = pow(m, 220.0) * 1.1 + pow(m, 30.0) * 0.06;\n"
-                      "float fres = pow(1.0 - saturate(dot(N, V)), 5.0) * 0.18;\n"
-                      "float v = 0.012 + spec + fres;\n"
+                      "float spec = pow(m, 300.0) * 0.6;\n"
+                      "float fres = 0.0;\n"
+                      "float v = spec + fres;\n"
                       "return float3(v, v, v);",
                    ["WP", "Cam", "T", "Moon"], -700, 100)
     link(wp, gloss, "WP"); link(cv, gloss, "Cam"); link(tm, gloss, "T"); link(moon, gloss, "Moon")
@@ -568,6 +571,21 @@ if "materials" in STEPS:
     out(e, unreal.MaterialProperty.MP_EMISSIVE_COLOR)
     finish(m)
 
+    # --- M_VertexMono: Modelle mit Graustufen-Vertexfarben (Zug, Waggon, Lore) ---
+    m = new_material("M_VertexMono")
+    vc = mel.create_material_expression(m, unreal.MaterialExpressionVertexColor, -900, -200)
+    tint = scalar_param(m, "Tint", 1.0, -900, 50)
+    amb = scalar_param(m, "Ambient", 0.3, -900, 150)
+    base = custom(m, "float g = dot(VC.rgb, float3(0.3, 0.59, 0.11)) * Tint; return float3(g, g, g);", ["VC", "Tint"], -500, -150)
+    link(vc, base, "VC"); link(tint, base, "Tint")
+    e = custom(m, "return Base * Ambient;", ["Base", "Ambient"], -250, 100)
+    link(base, e, "Base"); link(amb, e, "Ambient")
+    out(base, unreal.MaterialProperty.MP_BASE_COLOR)
+    out(constant(m, 0.45, -250, 250), unreal.MaterialProperty.MP_ROUGHNESS)
+    out(constant(m, 0.5, -250, 330), unreal.MaterialProperty.MP_SPECULAR)
+    out(e, unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    finish(m)
+
     # --- PP_CelMono: monochromes Cel Shading als Post-Process (mobiltauglich: nur Szenenfarbe + Tiefe) ---
     #     Helligkeit in wenige Stufen mit schmalem weichem Uebergang (wahrnehmungsgleich in sqrt-Raum),
     #     Glanzlichter > 1 bleiben, Konturen aus relativen Tiefenspruengen.
@@ -615,6 +633,21 @@ return float4(outL, outL, outL, 1);
     out(c, unreal.MaterialProperty.MP_EMISSIVE_COLOR)
     finish(m)
 
+    # --- PP_Mirror: Bild horizontal spiegeln (Fluch der Gegner-Wuerfel), Amount 0 = aus, 1 = gespiegelt ---
+    m = new_material("PP_Mirror")
+    m.set_editor_property("material_domain", unreal.MaterialDomain.MD_POST_PROCESS)
+    set_blendable_location(m, ["BL_SCENE_COLOR_AFTER_TONEMAPPING", "BL_AFTER_TONEMAPPING"])
+    st = mel.create_material_expression(m, unreal.MaterialExpressionSceneTexture, -700, 0)
+    st.set_editor_property("scene_texture_id", unreal.SceneTextureId.PPI_POST_PROCESS_INPUT0)
+    amt = scalar_param(m, "Amount", 0.0, -700, 150)
+    mc = custom(m, "float2 vuv = GetViewportUV(Parameters);\n"
+                   "vuv.x = lerp(vuv.x, 1.0 - vuv.x, saturate(Amount));\n"
+                   "float2 buv = ViewportUVToBufferUV(vuv);\n"
+                   "return SceneTextureLookup(buv, 14, false).rgb + Dummy.rgb * 0.0;",
+                ["Amount", "Dummy"], -350, 50)
+    link(amt, mc, "Amount"); link(st, mc, "Dummy")
+    out(mc, unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    finish(m)
 
 # ----------------------------------------------------------------------------------------------
 # Natur-Modelle (aus ChibiArena uebernommen): Tools/Import/Nature/SM_<Name>.fbx + T_<Name>.jpg
@@ -699,7 +732,8 @@ if "sprites" in STEPS:
             if path:
                 tex = unreal.load_asset(path)
                 tex.set_editor_property("srgb", True)
-                tex.set_editor_property("max_texture_size", 256)
+                # Overlays (Spruehnebel) in voller Breite, Symbole klein
+                tex.set_editor_property("max_texture_size", 1024 if "Overlay" in name else 256)
                 eal.save_loaded_asset(tex)
             log("Effekt-Bild %s <- %s: %s" % (name, fn, path))
 
@@ -915,9 +949,33 @@ if "ui" in STEPS:
                 tex.set_editor_property("lod_group", unreal.TextureGroup.TEXTUREGROUP_UI)
                 tex.set_editor_property("mip_gen_settings", unreal.TextureMipGenSettings.TMGS_NO_MIPMAPS)
                 tex.set_editor_property("srgb", True)
-                tex.set_editor_property("max_texture_size", 256)
+                # Overlays (Spruehnebel) in voller Breite, Symbole klein
+                tex.set_editor_property("max_texture_size", 1024 if "Overlay" in name else 256)
                 eal.save_loaded_asset(tex)
             log("UI-Symbol %s <- %s: %s" % (name, f, path))
+
+
+# ----------------------------------------------------------------------------------------------
+# 3D-Modelle: Tools/Import/Nature/3d/fbx/SM_*.fbx (aus Tools/blender_prepare_models.py) -> /Game/Models/SM_*
+#   Vertexfarben werden uebernommen, Material M_VertexMono
+# ----------------------------------------------------------------------------------------------
+if "models" in STEPS:
+    ensure_dir("/Game/Models")
+    mdir = os.path.join(PROJECT, "Tools", "Import", "Nature", "3d", "fbx")
+    vmat = unreal.load_asset("/Game/Materials/M_VertexMono")
+    if os.path.isdir(mdir):
+        for fn in sorted(os.listdir(mdir)):
+            if not fn.lower().endswith(".fbx"):
+                continue
+            name = os.path.splitext(fn)[0]
+            mp = import_static(os.path.join(mdir, fn), "/Game/Models", name, vertex_colors=True)
+            mesh = unreal.load_asset(mp) if mp else None
+            if mesh and vmat:
+                for i in range(len(mesh.static_materials)):
+                    mesh.set_material(i, vmat)
+                eal.save_loaded_asset(mesh)
+            b = mesh.get_bounding_box() if mesh else None
+            log("Modell %s: %s (Groesse %s)" % (name, mp, (b.max - b.min) if b else None))
 
 
 # ----------------------------------------------------------------------------------------------

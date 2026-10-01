@@ -115,20 +115,23 @@ namespace BuffVisuals
 	void AddStar(AActor* Owner, USceneComponent* Parent, float Size, UMaterialInterface* Mat, TArray<TObjectPtr<USceneComponent>>* Track = nullptr);
 }
 
-/** Tintenwolke: die Katze schwebt kurz auf einer Tintenwolke ueber allem und kann nicht getroffen werden. */
+/**
+ * Spraydose: kleine Dose auf dem Ruecken sprueht schwarze Tinte nach hinten, die Katze steigt in die Luft-Ebene auf
+ * (5 Luft-Fahrbahnen ueber den Fahrbahnen am Boden). Dort gibt es keine Hindernisse, nur Muenzreihen (bis 20).
+ */
 UCLASS()
-class SHADOWCAT_API UBuff_InkCloud : public UCatBuff
+class SHADOWCAT_API UBuff_SprayPaint : public UCatBuff
 {
 	GENERATED_BODY()
 
 public:
-	UBuff_InkCloud();
+	UBuff_SprayPaint();
 
-	/** Flughoehe (cm). */
-	UPROPERTY(EditDefaultsOnly, Category = "Tinte")
-	float FlyHeight = 210.f;
+	/** Hoehe der Luft-Ebene (cm ueber der Strecke, ueber allen Zuegen und Rampen). */
+	UPROPERTY(EditDefaultsOnly, Category = "Spray")
+	float FlyHeight = 620.f;
 
-	/** Unverwundbar nur mit dem Shop-Upgrade "Flug unverwundbar" (hoch genug fliegt sie ohnehin ueber vieles hinweg). */
+	/** Oben ist nichts im Weg: Treffer werden immer abgefangen. */
 	virtual bool AbsorbsHit(EHazardKind Kind) const override;
 
 protected:
@@ -138,13 +141,23 @@ protected:
 	virtual void OnRefreshed() override;
 
 private:
-	UPROPERTY(Transient)
-	TObjectPtr<UMaterialInstanceDynamic> PuffMat;
+	/** Dose auf dem Ruecken (relativ zu den Fuessen der Katze) */
+	FVector CanOffset = FVector(-44.f, 0.f, 78.f);
+	/** Stuetzpunkte des Fluessigkeitsstrahls */
+	static constexpr int32 StreamPoints = 15;
 
 	UPROPERTY(Transient)
-	TArray<TObjectPtr<UStaticMeshComponent>> Puffs;
+	TObjectPtr<UMaterialInstanceDynamic> MistMat;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UStaticMeshComponent>> Mist;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UStaticMeshComponent>> Segs;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UStaticMeshComponent>> Joints;
 };
-
 /** Tintenbombe: sprengt alle Hindernisse, Gegner und weisse Tinte vor der Katze weg (alle Fahrbahnen), Kleckse vorn. */
 UCLASS()
 class SHADOWCAT_API UBuff_InkBomb : public UCatBuff
@@ -168,4 +181,38 @@ protected:
 
 private:
 	void Blast();
+};
+
+/**
+ * Fluch der schwarzen Gegner-Wuerfel (statt Lebensverlust): 10 s Nachteil. Abgefragt ueber UBuffComponent::HasBuff
+ * (Steuerung im GameMode, Bildspiegelung ueber ARunCamera, Tempo im TrackDirector).
+ */
+/** Steuerung links/rechts vertauscht */
+UCLASS()
+class SHADOWCAT_API UBuff_CurseControls : public UCatBuff
+{
+	GENERATED_BODY()
+
+public:
+	UBuff_CurseControls() { DisplayName = NSLOCTEXT("ShadowCatBuffs", "CurseControls", "STEUERUNG VERDREHT"); Duration = 10.f; }
+};
+
+/** Bild horizontal gespiegelt */
+UCLASS()
+class SHADOWCAT_API UBuff_CurseMirror : public UCatBuff
+{
+	GENERATED_BODY()
+
+public:
+	UBuff_CurseMirror() { DisplayName = NSLOCTEXT("ShadowCatBuffs", "CurseMirror", "BILD GESPIEGELT"); Duration = 10.f; }
+};
+
+/** doppeltes Tempo */
+UCLASS()
+class SHADOWCAT_API UBuff_CurseSpeed : public UCatBuff
+{
+	GENERATED_BODY()
+
+public:
+	UBuff_CurseSpeed() { DisplayName = NSLOCTEXT("ShadowCatBuffs", "CurseSpeed", "DOPPELTES TEMPO"); Duration = 10.f; }
 };

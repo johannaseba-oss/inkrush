@@ -54,7 +54,7 @@ void AInkMarks::Build()
 	Blobs->AddInstances(X, false);
 	// Tintenflaeche der Bombe
 	Sheets->SetStaticMesh(RunAssets::Shape(TEXT("Plane")));
-	Sheets->SetNumCustomDataFloats(2);
+	Sheets->SetNumCustomDataFloats(4);
 	if (UMaterialInstanceDynamic* SM = RunAssets::NewMID(TEXT("M_InkSheet"), this))
 	{
 		Sheets->SetMaterial(0, SM);
@@ -151,6 +151,9 @@ void AInkMarks::AddSheet(const FVector& P0, const FVector& P1, float Width, floa
 	// Material: Instanzdaten 0/1 = linke/rechte Seite offen (lokales -Y/+Y)
 	Sheets->SetCustomDataValue(NextSheet, 0, bOpenLo ? 1.f : 0.f, false);
 	Sheets->SetCustomDataValue(NextSheet, 1, bOpenHi ? 1.f : 0.f, false);
+	// 2/3: seitliche Mitte (Welt-Y) und halbe Breite -> Material bestimmt daraus die Seitenlage (gerade Strecke)
+	Sheets->SetCustomDataValue(NextSheet, 2, (P0.Y + P1.Y) * 0.5f, false);
+	Sheets->SetCustomDataValue(NextSheet, 3, Width * 0.5f, false);
 	FSheet& S = SheetData[NextSheet];
 	NextSheet = (NextSheet + 1) % SheetCap;
 	const FVector D = P1 - P0;
