@@ -1,0 +1,23 @@
+# Unreal: Build- und Cache-Ordner (werden beim Öffnen/Bauen neu erzeugt)
+Binaries/
+Intermediate/
+DerivedDataCache/
+Saved/
+Build/
+Platforms/*/Binaries/
+Platforms/*/Intermediate/
+
+# IDE / Projektdateien (werden aus der .uproject erzeugt)
+.vs/
+.vscode/
+.idea/
+*.sln
+*.xcworkspace/
+*.xcodeproj/
+*.code-workspace
+
+# Python / Sonstiges
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db

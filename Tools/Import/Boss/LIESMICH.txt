@@ -1,0 +1,9 @@
+Modell fuer den Riesen am Horizont (Endlos-Modus)
+=================================================
+SK_Giant.fbx        Modell mit Skelett
+A_GiantIdle.fbx     Idle-Animation (Schleife)
+A_GiantAttack.fbx   Wurf-Animation (der Tintenklumpen fliegt nach ABossGiant::WindUp Sekunden los)
+
+Danach (Editor geschlossen) CAT_SETUP=boss fuer Tools/ue_setup.py ausfuehren. Groesse/Drehung/Wurfhand:
+MeshScale, MeshYaw, HandOffset in ABossGiant (C++-Standardwerte) bzw. BP_BossGiant.
+AccuRig-Exporte mit Root-Bewegung vorher wie die Katze mit Tools/blender_prepare_cat.py auf der Stelle backen.

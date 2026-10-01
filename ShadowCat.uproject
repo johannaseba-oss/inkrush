@@ -1,0 +1,18 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "5.8",
+	"Category": "",
+	"Description": "Inkrush - Endless-Runner-Prototyp (iPhone, Hochformat): schwarze Katze, monochrome Welt",
+	"Modules": [
+		{
+			"Name": "ShadowCat",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	],
+	"Plugins": [
+		{ "Name": "PythonScriptPlugin", "Enabled": true },
+		{ "Name": "EditorScriptingUtilities", "Enabled": true }
+	],
+	"TargetPlatforms": [ "Windows", "IOS" ]
+}
