@@ -95,6 +95,8 @@ private:
 	UFUNCTION() void HandleBuy3();
 	UFUNCTION() void HandleBuy4();
 	UFUNCTION() void HandleBuy5();
+	UFUNCTION() void HandleBuy6();
+	UFUNCTION() void HandleBuy7();
 
 	TWeakObjectPtr<ACatRunGameMode> Game;
 

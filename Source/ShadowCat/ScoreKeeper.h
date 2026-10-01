@@ -58,6 +58,14 @@ public:
 	UPROPERTY()
 	float SfxVolume = 0.8f;
 
+	/** Shop: Fluggeschwindigkeit der Spraydose (je +15 %) */
+	UPROPERTY()
+	int32 UpgFlySpeed = 0;
+
+	/** Shop: Muenzmagnet (je +1 Gleis Reichweite zu beiden Seiten) */
+	UPROPERTY()
+	int32 UpgMagnet = 0;
+
 	/** Shop: Stufen der Bomben-Reichweite (je +6 m) */
 	UPROPERTY()
 	int32 UpgBombRange = 0;

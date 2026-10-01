@@ -129,6 +129,10 @@ public:
 
 	/** Shop: zusaetzliche Reichweite der Tintenbombe (cm) */
 	float BombRangeBonus = 0.f;
+	/** Shop: schneller fliegen mit der Spraydose (Anteil, 0.15 = +15 %) */
+	float FlySpeedBonus = 0.f;
+	/** Shop: Muenzmagnet, sammelt Muenzen auf so vielen Nachbargleisen mit ein */
+	int32 MagnetLanes = 0;
 	bool bFlyInvulnerable = false;
 	bool bDoubleJump = false;
 

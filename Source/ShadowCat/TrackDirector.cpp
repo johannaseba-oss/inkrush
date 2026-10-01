@@ -31,8 +31,9 @@ ATrackDirector::ATrackDirector()
 
 	// Rundkurs-Level: etwas ruhigeres Tempo, Hindernisse seltener als im Endlos-Modus
 	Difficulty.StartSpeed = 900.f;
-	Difficulty.MaxSpeed = 1150.f;
-	Difficulty.SpeedGainPerSecond = 2.f;
+	// Tempo steigt den ganzen Lauf ueber langsam weiter (900 -> 1700 cm/s in gut 5 Minuten)
+	Difficulty.MaxSpeed = 1700.f;
+	Difficulty.SpeedGainPerSecond = 2.5f;
 	// mehr Hindernisse: dichtere Reihen, oefter mehrere Fahrbahnen gesperrt
 	Difficulty.MaxGapTime = 1.7f;
 	Difficulty.MinGapTime = 0.95f;
@@ -807,7 +808,8 @@ void ATrackDirector::StepDirector(float DeltaTime)
 	// im Loch kaum Vorwaertsbewegung (faellt nicht durch die Schachtwand); danach hinter dem Loch weiter
 	// Fluch "doppeltes Tempo": weich hoch und wieder herunter
 	SpeedCurse = FMath::FInterpConstantTo(SpeedCurse, Cat->GetBuffs()->HasBuff(UBuff_CurseSpeed::StaticClass()) ? 2.f : 1.f, DeltaTime, 2.f);
-	const float RunSpeed = Speed * SpeedCurse;
+	// Shop "Flugtempo": mit der Spraydose schneller
+	const float RunSpeed = Speed * SpeedCurse * (Cat->IsFlying() ? 1.f + Cat->FlySpeedBonus : 1.f);
 	Cat->StepRun(DeltaTime, Cat->IsFalling() ? RunSpeed * 0.15f : RunSpeed);
 	if (Cat->ConsumeFallEnd())
 	{
@@ -1078,7 +1080,7 @@ void ATrackDirector::OnSprayFlight(bool bStart, float Duration)
 	}
 	// Muenzreihen (bis 20) auf den Luft-Fahrbahnen; zwischen den Reihen wechselt die Fahrbahn
 	const int32 N = Layout.LanesPerCircuit;
-	const float S = FMath::Max(Speed, 600.f);
+	const float S = FMath::Max(Speed, 600.f) * (1.f + Cat->FlySpeedBonus);
 	const float Step = 135.f;
 	float A = Cat->GetA() + S * 0.9f;              // nach dem Aufsteigen
 	const float End = Cat->GetA() + S * (Duration - 0.5f);
@@ -2054,7 +2056,8 @@ void ATrackDirector::StepBoss(float DeltaTime)
 	{
 		if (StartSalvo())
 		{
-			NextSalvo = RunTime + Rng.FRandRange(SalvoInterval.X, SalvoInterval.Y);
+			// je laenger der Lauf, desto oefter kommen Salven (bis etwa halber Abstand)
+			NextSalvo = RunTime + Rng.FRandRange(SalvoInterval.X, SalvoInterval.Y) * FMath::Max(0.5f, 1.f - 0.07f * SalvoCount);
 			NextBossAttack = FMath::Max(NextBossAttack, RunTime + 12.f);
 		}
 		else
@@ -2128,6 +2131,8 @@ bool ATrackDirector::StartSalvo()
 	}
 	// jede weitere Salve ist schwerer: mehr Reihen, dichter, schneller geworfen, oefter nur eine freie Fahrbahn
 	const int32 Level = SalvoCount++;
+	// spaetere Salven fliegen schneller (weniger Reaktionszeit)
+	Boss->FlightTime = FMath::Max(1.05f, 1.6f - 0.07f * Level);
 	const int32 Rows = FMath::Min(SalvoRows + 2 * Level, 18);
 	const float RowGap = FMath::Max(950.f, SalvoRowGap - 70.f * Level);
 	const float ThrowGap = FMath::Max(0.14f, SalvoThrowGap - 0.04f * Level);
@@ -2265,7 +2270,8 @@ bool ATrackDirector::StartSalvo()
 
 void ATrackDirector::StepEndlessCoins(float DeltaTime)
 {
-	const int32 Got = Coins->StepCoins(DeltaTime, Cat->GetA(), Cat->GetLanes()->GetLateralOffset(), Cat->GetFeetZ(), true);
+	// Shop "Muenzmagnet": Muenzen auf Nachbargleisen werden mit eingesammelt
+	const int32 Got = Coins->StepCoins(DeltaTime, Cat->GetA(), Cat->GetLanes()->GetLateralOffset(), Cat->GetFeetZ(), true, Layout.LaneWidth * Cat->MagnetLanes);
 	if (Got > 0 && Game)
 	{
 		Game->OnCoinsCollected(Got);

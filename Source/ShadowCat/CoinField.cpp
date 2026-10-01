@@ -135,7 +135,7 @@ int32 ACoinField::CoinLaneAhead(float CatA, float MaxAhead) const
 	return Lane;
 }
 
-int32 ACoinField::StepCoins(float DeltaTime, float CatA, float CatLat, float FeetZ, bool bCollect)
+int32 ACoinField::StepCoins(float DeltaTime, float CatA, float CatLat, float FeetZ, bool bCollect, float Reach)
 {
 	Build();
 	Time += DeltaTime;
@@ -160,7 +160,7 @@ int32 ACoinField::StepCoins(float DeltaTime, float CatA, float CatLat, float Fee
 		{
 			// Katze beruehrt die Muenze (Sprung ueber die Reihe = verpasst); Hoehe: Koerpermitte der Katze nahe der Muenze
 			// (Boden-Muenzen beim Laufen, Luft-Muenzen beim Fliegen mit der Spraydose)
-			if (bCollect && FMath::Abs(Ahead) < 70.f && FMath::Abs(C.Lat - CatLat) < 60.f && FMath::Abs(FeetZ + 40.f - C.Base.Z) < 110.f)
+			if (bCollect && FMath::Abs(Ahead) < 70.f && FMath::Abs(C.Lat - CatLat) < 60.f + Reach && FMath::Abs(FeetZ + 40.f - C.Base.Z) < 110.f)
 			{
 				C.Pop = 0.f;
 				++Got;

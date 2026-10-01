@@ -1,6 +1,11 @@
 # Inkrush – mobiler Tintenkatzen-Runner (UE 5.8, iPhone Hochformat)
 
 
+## Shop-Upgrades und Schwierigkeit
+Shop (8 Angebote): +1 Leben, Spraydose +1 s, Sichere Landung, Doppelsprung, Bomben-Reichweite, Flugtempo (je +15 %, max 3),
+Münzmagnet (je +1 Gleis zu jeder Seite, max 2), Start-Bombe. Tempo steigt den ganzen Lauf über (900 -> 1700 cm/s, +2,5/s);
+Salven kommen mit jeder Salve öfter (Abstand bis zur Hälfte) und fliegen schneller (1,6 s -> 1,05 s), zusätzlich mehr Reihen.
+
 ## Flüche der Gegner-Würfel
 Schwarze Würfel kosten kein Leben mehr, sondern geben 10 s einen zufälligen Fluch (`Buffs.h`): `UBuff_CurseControls`
 (links/rechts vertauscht, GameMode::RequestLaneShift), `UBuff_CurseMirror` (Bild gespiegelt, `PP_Mirror` über `ARunCamera::SetMirror`),

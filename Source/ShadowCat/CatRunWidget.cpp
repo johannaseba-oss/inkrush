@@ -616,7 +616,7 @@ void UCatRunWidget::BuildTree()
 		ShopCoins = MakeText(TEXT("MÜNZEN  0"), 40, White);
 		Row(ShopCoins);
 		Row(Spacer(40.f));
-		for (int32 I = 0; I < 6; ++I)
+		for (int32 I = 0; I < 8; ++I)
 		{
 			UBorder* Card = WidgetTree->ConstructWidget<UBorder>();
 			Card->SetBrush(RoundBrush(FLinearColor(0.f, 0.f, 0.f, 0.55f), 22.f, FLinearColor(1.f, 1.f, 1.f, 0.35f), 2.f));
@@ -646,7 +646,9 @@ void UCatRunWidget::BuildTree()
 			case 2: Buy->OnClicked.AddDynamic(this, &UCatRunWidget::HandleBuy2); break;
 			case 3: Buy->OnClicked.AddDynamic(this, &UCatRunWidget::HandleBuy3); break;
 			case 4: Buy->OnClicked.AddDynamic(this, &UCatRunWidget::HandleBuy4); break;
-			default: Buy->OnClicked.AddDynamic(this, &UCatRunWidget::HandleBuy5); break;
+			case 5: Buy->OnClicked.AddDynamic(this, &UCatRunWidget::HandleBuy5); break;
+			case 6: Buy->OnClicked.AddDynamic(this, &UCatRunWidget::HandleBuy6); break;
+			default: Buy->OnClicked.AddDynamic(this, &UCatRunWidget::HandleBuy7); break;
 			}
 			ShopRows.Add(CardSize);
 			ShopNames.Add(Name);
@@ -903,6 +905,8 @@ void UCatRunWidget::HandleBuy2() { if (Game.IsValid()) Game->RequestBuy(2); }
 void UCatRunWidget::HandleBuy3() { if (Game.IsValid()) Game->RequestBuy(3); }
 void UCatRunWidget::HandleBuy4() { if (Game.IsValid()) Game->RequestBuy(4); }
 void UCatRunWidget::HandleBuy5() { if (Game.IsValid()) Game->RequestBuy(5); }
+void UCatRunWidget::HandleBuy6() { if (Game.IsValid()) Game->RequestBuy(6); }
+void UCatRunWidget::HandleBuy7() { if (Game.IsValid()) Game->RequestBuy(7); }
 void UCatRunWidget::HandleItem0() { if (Game.IsValid()) { Game->RequestUseItem(0); Game->AfterUiTap(); } }
 void UCatRunWidget::HandleItem1() { if (Game.IsValid()) { Game->RequestUseItem(1); Game->AfterUiTap(); } }
 void UCatRunWidget::HandleItem2() { if (Game.IsValid()) { Game->RequestUseItem(2); Game->AfterUiTap(); } }

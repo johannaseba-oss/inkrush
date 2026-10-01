@@ -259,6 +259,8 @@ TArray<FShopRow> ACatRunGameMode::BuildShopRows(TArray<int32>* OutPrices) const
 	Add(TEXT("SICHERE LANDUNG"), TEXT("nach dem Flug 3 s unverwundbar"), 450, D->bUpgFlyInvulnerable);
 	Add(TEXT("DOPPELSPRUNG"), TEXT("in der Luft noch einmal springen"), 600, D->bUpgDoubleJump);
 	Add(TEXT("BOMBEN-REICHWEITE"), FString::Printf(TEXT("jetzt %d m nach vorn"), 18 + 6 * D->UpgBombRange), LevelPrice(150, 1.8f, D->UpgBombRange), D->UpgBombRange >= 4);
+	Add(TEXT("FLUGTEMPO"), D->UpgFlySpeed > 0 ? FString::Printf(TEXT("Spraydose fliegt jetzt +%d %% schneller"), 15 * D->UpgFlySpeed) : FString(TEXT("Spraydose fliegt 15 % schneller")), LevelPrice(140, 1.8f, D->UpgFlySpeed), D->UpgFlySpeed >= 3);
+	Add(TEXT("MÜNZMAGNET"), D->UpgMagnet > 0 ? FString::Printf(TEXT("sammelt %d Gleis(e) daneben mit"), D->UpgMagnet) : FString(TEXT("+1 Gleis Reichweite zu jeder Seite")), LevelPrice(300, 2.2f, D->UpgMagnet), D->UpgMagnet >= 2);
 	Add(TEXT("START-BOMBE"), bPaused ? FString(TEXT("sofort +1 Bombe, danach jeder Start")) : FString::Printf(TEXT("mit %d Bomben starten"), D->UpgStartBombs), LevelPrice(200, 2.f, D->UpgStartBombs), D->UpgStartBombs >= 3);
 	if (OutPrices)
 	{
@@ -274,6 +276,8 @@ void ACatRunGameMode::ApplyUpgrades()
 	Cat->bFlyInvulnerable = Save->bUpgFlyInvulnerable;
 	Cat->bDoubleJump = Save->bUpgDoubleJump;
 	Cat->BombRangeBonus = 600.f * Save->UpgBombRange;
+	Cat->FlySpeedBonus = 0.15f * Save->UpgFlySpeed;
+	Cat->MagnetLanes = Save->UpgMagnet;
 }
 
 void ACatRunGameMode::BankRunCoins()
@@ -410,7 +414,9 @@ void ACatRunGameMode::RequestBuy(int32 Index)
 	case 2: D->bUpgFlyInvulnerable = true; break;
 	case 3: D->bUpgDoubleJump = true; break;
 	case 4: ++D->UpgBombRange; break;
-	case 5: ++D->UpgStartBombs; break;
+	case 5: ++D->UpgFlySpeed; break;
+	case 6: ++D->UpgMagnet; break;
+	case 7: ++D->UpgStartBombs; break;
 	default: break;
 	}
 	Score->Save();
@@ -423,7 +429,7 @@ void ACatRunGameMode::RequestBuy(int32 Index)
 			++RunMaxLives;
 			++Lives;
 		}
-		if (Index == 5)
+		if (Index == 7)
 		{
 			Cat->GetSlot()->GrantClass(UBuff_InkBomb::StaticClass(), 1);
 		}

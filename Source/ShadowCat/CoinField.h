@@ -34,7 +34,8 @@ public:
 	/** Alle schwebenden Muenzen oberhalb von Z entfernen (Luft-Ebene der Spraydose nach dem Flug). */
 	void RemoveAbove(float Z);
 	/** Drehen/Schweben, Einsammeln pruefen (nur bei bCollect). Liefert die Anzahl neu eingesammelter Muenzen. */
-	int32 StepCoins(float DeltaTime, float CatA, float CatLat, float FeetZ, bool bCollect);
+	/** Reach: zusaetzliche seitliche Reichweite beim Einsammeln (Muenzmagnet, cm). */
+	int32 StepCoins(float DeltaTime, float CatA, float CatLat, float FeetZ, bool bCollect, float Reach = 0.f);
 	int32 NumLive() const;
 	/** Fahrbahn der naechsten Muenze voraus (Test-Autopilot), INDEX_NONE = keine. */
 	int32 CoinLaneAhead(float CatA, float MaxAhead) const;
